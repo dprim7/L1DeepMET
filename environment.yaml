@@ -1,0 +1,11 @@
+name: l1deepmet
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.9
+  - numpy
+  - matplotlib
+  - tensorflow
+  - pyyaml
+  - pip
+  - pytest
