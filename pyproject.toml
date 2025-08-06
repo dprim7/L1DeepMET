@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "l1deepmet"
+version = "0.1.0"
+description = "HW optimized deep learning MET reconstruction for CMS L1 Trigger"
+requires-python = ">=3.8"
+
+dependencies = [
+    "numpy",
+    "tensorflow>=2.10",
+    "pyyaml",
+    "h5py",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

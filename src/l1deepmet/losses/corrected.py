@@ -28,10 +28,6 @@ class CorrectedCompositeLoss(tf.keras.losses.Loss):
         mse_loss = tf.reduce_mean(self.mse(y_true, y_pred))
         binned_loss = self._compute_binned_deviation(y_true, y_pred)
 
-        self.add_loss(mae_loss, name='mae')
-        self.add_loss(mse_loss, name='mse')
-        self.add_loss(binned_loss, name='binned_loss')
-
         total_loss = (self.mae_weight * mae_loss +
                         self.mse_weight * mse_loss +
                         self.binned_weight * binned_loss)
