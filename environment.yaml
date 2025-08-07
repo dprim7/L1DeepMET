@@ -2,10 +2,15 @@ name: l1deepmet
 channels:
   - conda-forge
 dependencies:
-  - python>=3.9
+  - python>=3.10
   - numpy
   - matplotlib
   - tensorflow
+  - keras
+  - hls4ml
   - pyyaml
   - pip
   - pytest
+  - pip:
+      - HGQ2
+      - da4ml>=0.3
