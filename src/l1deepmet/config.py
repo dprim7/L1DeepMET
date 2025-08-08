@@ -4,6 +4,7 @@ from typing import Any, Dict
 import yaml # type: ignore
 
 # TODO: remove legacy CLI-arguments
+# TODO: fit to new repo structure
 
 
 class Config:

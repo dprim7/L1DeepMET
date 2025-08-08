@@ -3,6 +3,7 @@ import tensorflow as tf  # type: ignore
 from typing import Any, Dict, Optional
 
 # TODO: implement px,py multiplication where needed
+# TODO: fix input dimensions in output head
 class OutputHead(ABC):
     """
     Abstract base class for output head strategies.
