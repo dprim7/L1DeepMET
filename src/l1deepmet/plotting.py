@@ -34,12 +34,8 @@ def resolqt(y):
 
 
 def phidiff(phi1, phi2):
-    phi_r = phi1 - phi2
-    if phi_r > math.pi:
-        phi_r = phi_r - 2 * math.pi
-    if phi_r < -math.pi:
-        phi_r = phi_r + 2 * math.pi
-    return phi_r 
+    """Calculate the smallest angular difference between two angles."""
+    return np.arctan2(np.sin(phi1 - phi2), np.cos(phi1 - phi2))
 
 
 def MakePlots(trueXY, mlXY, puppiXY, path_out):

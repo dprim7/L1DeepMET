@@ -10,6 +10,8 @@ dependencies:
   - hls4ml
   - pyyaml
   - pip
+  - mplhep
+  - scipy
   - pytest
   - pip:
       - HGQ2
