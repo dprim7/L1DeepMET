@@ -1,0 +1,47 @@
+# DVC Pipeline Definition
+# This file defines the stages of the L1DeepMET pipeline
+
+stages:
+  preprocess:
+    cmd: python scripts/preprocess.py --config params.yaml --tag ${preprocess.output_tag}
+    deps:
+      - scripts/preprocess.py
+      - src/l1deepmet/data/preprocessing.py
+      - src/l1deepmet/utils.py
+      - src/l1deepmet/plotting.py
+      # Note: Raw data dependencies would be added here if tracked by DVC
+      # - data/25Jul8_140X_v0/
+    params:
+      - preprocess
+    outs:
+      - data/preprocessed/${preprocess.output_tag}/train.h5
+      - data/preprocessed/${preprocess.output_tag}/val.h5
+      - data/preprocessed/${preprocess.output_tag}/test.h5
+    plots:
+      - outputs/preprocessing_plots/${preprocess.output_tag}/
+
+  # Future stages can be added here
+  # train:
+  #   cmd: python scripts/train.py --config params.yaml
+  #   deps:
+  #     - scripts/train.py
+  #     - data/preprocessed/${preprocess.output_tag}/train.h5
+  #     - data/preprocessed/${preprocess.output_tag}/val.h5
+  #   params:
+  #     - train
+  #     - model
+  #   outs:
+  #     - models/${preprocess.output_tag}/
+  #   metrics:
+  #     - outputs/training_metrics.json
+  
+  # evaluate:
+  #   cmd: python scripts/evaluate.py --config params.yaml
+  #   deps:
+  #     - scripts/evaluate.py
+  #     - models/${preprocess.output_tag}/
+  #     - data/preprocessed/${preprocess.output_tag}/test.h5
+  #   params:
+  #     - preprocess.output_tag
+  #   metrics:
+  #     - outputs/evaluation_metrics.json

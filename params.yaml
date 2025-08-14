@@ -1,0 +1,80 @@
+# DVC Parameters File
+# This file defines all parameters for the L1DeepMET pipeline
+
+preprocess:
+  # Input data configuration
+  data_root: "/home/users/dprimosc/L1DeepMET/data/25Jul8_140X_v0"
+    
+  output_tag: "25Jul8_140X_v0"
+  output_dir: "data/preprocessed"
+  plot_dir: "outputs/preprocessing_plots"
+
+  # Sample configuration with desired event counts
+  samples:
+    TT_PU200: 100000
+    VBFHToInvisible_PU200: 48000
+  
+  # ROOT file variables to load
+  var_list:
+    - nL1PuppiCands
+    - L1PuppiCands_pt
+    - L1PuppiCands_eta
+    - L1PuppiCands_phi
+    - L1PuppiCands_charge
+    - L1PuppiCands_pdgId
+    - L1PuppiCands_puppiWeight
+    - L1PuppiCands_dxyErr
+    - HGCal3DCl_firstHcal1layers
+    - HGCal3DCl_firstHcal3layers
+    - HGCal3DCl_firstHcal5layers
+    - HGCal3DCl_hoe
+    - HGCal3DCl_showerlength
+    - HGCal3DCl_coreshowerlength
+  
+  # MC truth variables
+  var_list_mc:
+    - genMet_pt
+    - genMet_phi
+  
+  # Discrete variable encoding
+  discrete_encoding:
+    L1PuppiCands_charge:
+      -999.0: 0
+      -1.0: 1
+      0.0: 2
+      1.0: 3
+    L1PuppiCands_pdgId:
+      -999.0: 0
+      -211.0: 1
+      -130.0: 2
+      -22.0: 3
+      -13.0: 4
+      -11.0: 5
+      11.0: 5
+      13.0: 4
+      22.0: 3
+      130.0: 2
+      211.0: 1
+  
+  # Processing parameters
+  max_pf_candidates: 128
+  outlier_threshold: 500.0  # GeV
+  random_seed: 42
+  
+  train_val_test_split:
+    train: 0.8
+    val: 0.1
+    test: 0.1
+
+
+# Training parameters (for future use)
+train:
+  batch_size: 32
+  learning_rate: 0.001
+  epochs: 100
+  # Add more training params as needed
+
+# Model parameters (for future use)  
+model:
+  # Add model architecture params as needed
+  pass

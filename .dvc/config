@@ -1,0 +1,4 @@
+[core]
+    remote = storage
+['remote "storage"']
+    url = /ceph/cms/store/user/dprimosc/l1deepmet_data/preprocessed

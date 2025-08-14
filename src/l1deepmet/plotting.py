@@ -1030,4 +1030,192 @@ def analyze_outliers(features, output_dir):
     
     print(f"Saved outlier analysis to {analysis_file}") 
 
+def control_plots(processed_results, plot_dir):
+    """
+    plots control plots for all features and samples in preprocessed data
+    """
+    setup_cms_style()
+    plot_dir.mkdir(parents=True, exist_ok=True)
 
+    # Prepare data for plotting
+    # Combined data
+    all_features = []
+    for sample_name, (features, targets) in processed_results.items():
+        all_features.append(features)
+    combined_features = np.concatenate(all_features, axis=0)
+
+    # Individual sample data
+    sample_data = {}
+    for sample_name, (features, targets) in processed_results.items():
+        sample_data[sample_name] = features
+
+
+
+    # pt plots
+
+    for sample_name in sample_data.keys():
+        pt_sample = sample_data[sample_name][:, :, 0].flatten()
+        pt_sample = pt_sample[pt_sample != 0]
+        plt.figure(figsize=(10, 6))
+        plt.hist(pt_sample, bins=100, alpha=0.7, density=True, edgecolor='black', linewidth=0.5)
+        plt.xlabel('pt [GeV]', fontsize=12)
+        plt.ylabel('Density', fontsize=12)
+        plt.title(f'Sample: {sample_name} - Distribution of pt', fontsize=14, fontweight='bold')
+        plt.yscale('log')  
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(plot_dir / f"pt_{sample_name}_histogram.png", dpi=300, bbox_inches='tight')
+        plt.close()
+
+    # eta plots 
+
+    for sample_name in sample_data.keys():
+        eta_sample = sample_data[sample_name][:, :, 1].flatten()
+        eta_sample = eta_sample[eta_sample != 0]
+        plt.figure(figsize=(10, 6))
+        plt.hist(eta_sample, bins=100, alpha=0.7, density=True, edgecolor='black', linewidth=0.5)
+        plt.xlabel('eta', fontsize=12)
+        plt.ylabel('Density', fontsize=12)
+        plt.title(f'Sample: {sample_name} - Distribution of eta', fontsize=14, fontweight='bold')
+        plt.xlim(-5, 5)
+        plt.axvline(0, color='red', linestyle='--', alpha=0.5, label='η = 0')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(plot_dir / f"eta_{sample_name}_histogram.png", dpi=300, bbox_inches='tight')
+        plt.close()
+
+    #phi plots
+
+    for sample_name in sample_data.keys():
+        phi_sample = sample_data[sample_name][:, :, 2].flatten()
+        phi_sample = phi_sample[phi_sample != 0]
+        plt.figure(figsize=(10, 6))
+        plt.hist(phi_sample, bins=100, alpha=0.7, density=True, edgecolor='black', linewidth=0.5)
+        plt.xlabel('phi [rad]', fontsize=12)
+        plt.ylabel('Density', fontsize=12)
+        plt.title(f'Sample: {sample_name} - Distribution of phi', fontsize=14, fontweight='bold')
+        plt.xlim(-np.pi, np.pi)
+        plt.axvline(0, color='red', linestyle='--', alpha=0.5, label='φ = 0')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(plot_dir / f"phi_{sample_name}_histogram.png", dpi=300, bbox_inches='tight')
+        plt.close()
+
+    # PUPPI weight plots - exclude padding (weight = 1.0)
+    for sample_name in sample_data.keys():
+        puppi_sample = sample_data[sample_name][:, :, 3].flatten()
+        
+        # Remove padding (weight = 0 and weight = 1.0)
+        puppi_sample = puppi_sample[(puppi_sample != 0) & (puppi_sample != 1.0)]
+        
+        plt.figure(figsize=(10, 6))
+        plt.hist(puppi_sample, bins=100, alpha=0.7, density=True, 
+                edgecolor='black', linewidth=0.5)
+        plt.xlabel('PUPPI Weight', fontsize=12)
+        plt.ylabel('Density', fontsize=12)
+        plt.title(f'Sample: {sample_name} - Distribution of PUPPI Weight (excluding padding)', 
+                fontsize=14, fontweight='bold')
+        
+        # Set appropriate x-axis range for actual PUPPI weights
+    
+        plt.xlim(0, 1.0)
+        plt.axvline(0.5, color='red', linestyle='--', alpha=0.5, label='Weight = 0.5')
+        
+        
+        mean_val = np.mean(puppi_sample)
+        std_val = np.std(puppi_sample)
+        min_val = np.min(puppi_sample)
+        max_val = np.max(puppi_sample)
+        
+        plt.text(0.02, 0.98, 
+                    f'Entries: {len(puppi_sample):,}\n'
+                    f'Mean: {mean_val:.3f}\n'
+                    f'Std: {std_val:.3f}\n'
+                    f'Range: [{min_val:.3f}, {max_val:.3f}]', 
+                    transform=plt.gca().transAxes, verticalalignment='top',
+                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(plot_dir / f"puppi_weight_{sample_name}_histogram.png", 
+                    dpi=300, bbox_inches='tight')
+        plt.close()
+
+    # hcaldepth plots
+    for sample_name in sample_data.keys():
+        hcal_sample = sample_data[sample_name][:, :, 4].flatten()
+        hcal_sample = hcal_sample[hcal_sample != 0]
+        plt.figure(figsize=(10, 6))
+        plt.hist(hcal_sample, bins=50, alpha=0.7, density=True, edgecolor='black', linewidth=0.5)
+        plt.xlabel('HCal Depth', fontsize=12)
+        plt.ylabel('Density', fontsize=12)
+        plt.title(f'Sample: {sample_name} - Distribution of HCal Depth', fontsize=14, fontweight='bold')
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(plot_dir / f"hcal_depth_{sample_name}_histogram.png", dpi=300, bbox_inches='tight')
+        plt.close()
+
+    #px plots
+    for sample_name in sample_data.keys():
+        px_sample = sample_data[sample_name][:, :, 5].flatten()
+        px_sample = px_sample[px_sample != 0]
+        plt.figure(figsize=(10, 6))
+        plt.hist(px_sample, bins=100, alpha=0.7, density=True, edgecolor='black', linewidth=0.5)
+        plt.xlabel('px [GeV]', fontsize=12)
+        plt.ylabel('Density', fontsize=12)
+        plt.title(f'Sample: {sample_name} - Distribution of px', fontsize=14, fontweight='bold')
+        plt.yscale('log')
+        plt.axvline(0, color='red', linestyle='--', alpha=0.5, label='px = 0')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(plot_dir / f"px_{sample_name}_histogram.png", dpi=300, bbox_inches='tight')
+        plt.close()
+
+    # py plots
+    for sample_name in sample_data.keys():
+        py_sample = sample_data[sample_name][:, :, 6].flatten()
+        py_sample = py_sample[py_sample != 0]
+        plt.figure(figsize=(10, 6))
+        plt.hist(py_sample, bins=100, alpha=0.7, density=True, edgecolor='black', linewidth=0.5)
+        plt.xlabel('py [GeV]', fontsize=12)
+        plt.ylabel('Density', fontsize=12)
+        plt.title(f'Sample: {sample_name} - Distribution of py', fontsize=14, fontweight='bold')
+        plt.yscale('log')
+        plt.axvline(0, color='red', linestyle='--', alpha=0.5, label='py = 0')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(plot_dir / f"py_{sample_name}_histogram.png", dpi=300, bbox_inches='tight')
+        plt.close()
+
+    # encoded PDGid plots
+    for sample_name in sample_data.keys():
+        pdgid_sample = sample_data[sample_name][:, :, 7].flatten()
+        plt.figure(figsize=(10, 6))
+        unique_vals, counts = np.unique(pdgid_sample, return_counts=True)
+        plt.bar(unique_vals, counts / np.sum(counts), alpha=0.7, edgecolor='black')
+        plt.xlabel('Encoded PDG ID', fontsize=12)
+        plt.ylabel('Fraction', fontsize=12)
+        plt.title(f'Sample: {sample_name} - Distribution of Encoded PDG ID', fontsize=14, fontweight='bold')
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(plot_dir / f"encoded_pdgId_{sample_name}_histogram.png", dpi=300, bbox_inches='tight')
+        plt.close()
+
+    # encoded charge plots
+    for sample_name in sample_data.keys():
+        charge_sample = sample_data[sample_name][:, :, 8].flatten()
+        plt.figure(figsize=(10, 6))
+        unique_vals, counts = np.unique(charge_sample, return_counts=True)
+        plt.bar(unique_vals, counts / np.sum(counts), alpha=0.7, edgecolor='black')
+        plt.xlabel('Encoded Charge', fontsize=12)
+        plt.ylabel('Fraction', fontsize=12)
+        plt.title(f'Sample: {sample_name} - Distribution of Encoded Charge', fontsize=14, fontweight='bold')
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(plot_dir / f"encoded_charge_{sample_name}_histogram.png", dpi=300, bbox_inches='tight')
+        plt.close()

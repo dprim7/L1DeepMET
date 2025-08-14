@@ -1,0 +1,57 @@
+data:
+  sample-list:
+    - TT_PU200: 100000
+    - VBFHToInvisible_PU200: 48000
+
+  var-list:
+    - nL1PuppiCands
+    - L1PuppiCands_pt
+    - L1PuppiCands_eta
+    - L1PuppiCands_phi
+    - L1PuppiCands_charge
+    - L1PuppiCands_pdgId
+    - L1PuppiCands_puppiWeight
+    - L1PuppiCands_dxyErr
+    - HGCal3DCl_firstHcal1layers
+    - HGCal3DCl_firstHcal3layers
+    - HGCal3DCl_firstHcal5layers
+    - HGCal3DCl_hoe
+    - HGCal3DCl_showerlength
+    - HGCal3DCl_coreshowerlength
+
+  var-list-mc:
+    - genMet_pt
+    - genMet_phi
+
+  discrete-encoding:
+    L1PuppiCands_charge: {-999.0: 0, -1.0: 1, 0.0: 2, 1.0: 3}
+    L1PuppiCands_pdgId: {
+      -999.0: 0, 
+      -211.0: 1,
+      -130.0: 2,
+      -22.0: 3,
+      -13.0: 4,
+      -11.0: 5,
+      11.0: 5,
+      13.0: 4,
+      22.0: 3,
+      130.0: 2,
+      211.0: 1,
+    }
+
+  max-n-PUPPI-Cands: 128
+  
+  features:
+    - pt
+    - eta
+    - phi
+    - charge
+    - pdgId
+    - puppiWeight
+    - hcalDepth
+  
+  train-val-test-split:
+    train: 0.8
+    val: 0.1
+    test: 0.1
+
