@@ -1,6 +1,8 @@
 # DVC Workflow Guide
 
 Data version control and experiment management for L1DeepMET.
+TODO: tracking currently doesn't work because data is saved into a simlinked
+      location, which cant be tracked by dvc 
 
 ## Core Files
 
