@@ -3,6 +3,15 @@ from typing import Any, Dict, Optional, Config
 import keras # type: ignore
 from config import Config
 
+
+def split_preprocessed_features(X):
+    """Split preprocessed H5 features into model input format"""
+    inputs = X[:, :, 0:5]      # pt, eta, phi, puppi, hcal_depth
+    pxpy = X[:, :, 5:7]        # px, py
+    inputs_cat0 = X[:, :, 7]   # encoded_pdgId
+    inputs_cat1 = X[:, :, 8]   # encoded_charge
+    return inputs, pxpy, inputs_cat0, inputs_cat1
+
 def train_hgq(model: keras.Model, config: Config):
     
 

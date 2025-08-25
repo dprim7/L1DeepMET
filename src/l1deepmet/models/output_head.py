@@ -28,7 +28,6 @@ class DirectRegressionHead(OutputHead):
         return tf.keras.layers.Dense(
             self.output_dim,
             name='direct_regression_head',
-            name='met',
         ) #TODO: check activation/initialization needs
 
     @property

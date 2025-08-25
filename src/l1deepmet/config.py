@@ -112,7 +112,7 @@ def create_default_config() -> Config:
             "workflow_type": "dataGenerator",
             "epochs": 100,
             "batch_size": 1024,
-            "mode": 0,
+            "mode": 1,
             "normFac": 100,
         },
         "pruning": {

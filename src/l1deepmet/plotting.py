@@ -1,11 +1,11 @@
 import math
 import os
-import numpy as np
-import matplotlib.pyplot as plt
-import mplhep as hep
+import numpy as np # type: ignore
+import matplotlib.pyplot as plt # type: ignore
+import mplhep as hep # type: ignore
 from pathlib import Path
 from typing import Dict, Tuple, Optional, List
-from scipy.stats import binned_statistic
+from scipy.stats import binned_statistic # type: ignore
 from collections import OrderedDict
 import logging
 
@@ -1039,16 +1039,17 @@ def control_plots(processed_results, plot_dir):
 
     # Prepare data for plotting
     # Combined data
-    all_features = []
-    for sample_name, (features, targets) in processed_results.items():
-        all_features.append(features)
-    combined_features = np.concatenate(all_features, axis=0)
+    #all_features = []
+    #for sample_name, (features, targets) in processed_results.items():
+    #    all_features.append(features)
+    #combined_features = np.concatenate(all_features, axis=0)
 
     # Individual sample data
     sample_data = {}
+    sample_targets = {}
     for sample_name, (features, targets) in processed_results.items():
         sample_data[sample_name] = features
-
+        sample_targets[sample_name] = targets
 
 
     # pt plots
@@ -1219,3 +1220,77 @@ def control_plots(processed_results, plot_dir):
         plt.tight_layout()
         plt.savefig(plot_dir / f"encoded_charge_{sample_name}_histogram.png", dpi=300, bbox_inches='tight')
         plt.close()
+
+    #-----------------------------------------------------------------------------------------------------
+    # Target Plots
+    #-----------------------------------------------------------------------------------------------------
+
+    for sample_name in sample_data.keys():
+        targets = sample_targets[sample_name]  
+        
+        
+        px_target = targets[:, 0]  
+        py_target = targets[:, 1] 
+        
+       
+        met_target = np.sqrt(px_target**2 + py_target**2)
+        phi_target = np.arctan2(py_target, px_target)  
+        
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+        
+        # Plot 1: Magnitude distribution
+        ax1.hist(met_target, bins=100, alpha=0.7, density=True, 
+                edgecolor='black', linewidth=0.5, color='blue')
+        ax1.set_xlabel('Target Magnitude [GeV]', fontsize=12)
+        ax1.set_ylabel('Density', fontsize=12)
+        ax1.set_title(f'{sample_name} - Target Magnitude Distribution', 
+                     fontsize=12, fontweight='bold')
+        ax1.set_yscale('log')  # Log scale for better visualization
+        ax1.grid(True, alpha=0.3)
+        
+        # Add statistics for magnitude
+        mag_mean = np.mean(met_target)
+        mag_std = np.std(met_target)
+        mag_median = np.median(met_target)
+        ax1.text(0.02, 0.98, 
+                f'Entries: {len(met_target):,}\n'
+                f'Mean: {mag_mean:.1f} GeV\n'
+                f'Std: {mag_std:.1f} GeV\n'
+                f'Median: {mag_median:.1f} GeV', 
+                transform=ax1.transAxes, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        
+        # Plot 2: Angle distribution
+        ax2.hist(phi_target, bins=100, alpha=0.7, density=True, 
+                edgecolor='black', linewidth=0.5, color='green')
+        ax2.set_xlabel('Target Angle [rad]', fontsize=12)
+        ax2.set_ylabel('Density', fontsize=12)
+        ax2.set_title(f'{sample_name} - Target Angle Distribution', 
+                     fontsize=12, fontweight='bold')
+        ax2.set_xlim(-np.pi, np.pi)
+        
+        # Add reference lines for angle
+        ax2.axvline(0, color='red', linestyle='--', alpha=0.5, label='φ = 0')
+        ax2.axvline(np.pi/2, color='orange', linestyle='--', alpha=0.5, label='φ = π/2')
+        ax2.axvline(-np.pi/2, color='orange', linestyle='--', alpha=0.5, label='φ = -π/2')
+        ax2.axvline(np.pi, color='purple', linestyle='--', alpha=0.5, label='φ = ±π')
+        ax2.axvline(-np.pi, color='purple', linestyle='--', alpha=0.5)
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+        
+        # Add statistics for angle
+        angle_mean = np.mean(phi_target)
+        angle_std = np.std(phi_target)
+        ax2.text(0.02, 0.98, 
+                f'Entries: {len(phi_target):,}\n'
+                f'Mean: {angle_mean:.3f} rad\n'
+                f'Std: {angle_std:.3f} rad', 
+                transform=ax2.transAxes, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        
+        plt.tight_layout()
+        plt.savefig(plot_dir / f"targets_{sample_name}_distribution.png", 
+                    dpi=300, bbox_inches='tight')
+        plt.close()
+

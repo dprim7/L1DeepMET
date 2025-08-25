@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import tensorflow as tf # type: ignore
 from typing import Any, Dict, Optional
-from output_head import OutputHead, DirectRegressionHead, ParticleWeightHead, METWeightHead
+from l1deepmet.models.output_head import OutputHead, DirectRegressionHead, ParticleWeightHead, METWeightHead
 
 class BaseModel(ABC, tf.keras.Model):
 
@@ -20,7 +20,7 @@ class BaseModel(ABC, tf.keras.Model):
         pass
     
     @abstractmethod
-    def forward(self, inputs: tf.Tensor, training: Optional[bool] = None) -> tf.Tensor:
+    def call(self, inputs: tf.Tensor, training: Optional[bool] = None) -> tf.Tensor:
         pass
 
     @abstractmethod
