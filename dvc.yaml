@@ -21,27 +21,38 @@ stages:
       - outputs/preprocessing_plots/${preprocess.output_tag}/
 
   # Future stages can be added here
-  # train:
-  #   cmd: python scripts/train.py --config params.yaml
-  #   deps:
-  #     - scripts/train.py
-  #     - data/preprocessed/${preprocess.output_tag}/train.h5
-  #     - data/preprocessed/${preprocess.output_tag}/val.h5
-  #   params:
-  #     - train
-  #     - model
-  #   outs:
-  #     - models/${preprocess.output_tag}/
-  #   metrics:
-  #     - outputs/training_metrics.json
+  train:
+    cmd: python scripts/train.py --config params.yaml --tag ${preprocess.output_tag}
+    deps:
+      - scripts/train.py
+      - src/l1deepmet/train.py
+      - src/l1deepmet/models/dense.py
+      - src/l1deepmet/models/base.py
+      - src/l1deepmet/losses/corrected.py
+      - data/preprocessed/${preprocess.output_tag}/train.h5
+      - data/preprocessed/${preprocess.output_tag}/val.h5
+    params:
+      - train
+      - model
+      - loss
+      - optimizer
+      - callbacks
+      - data
+    outs:
+      - models/${preprocess.output_tag}/best_model.keras
+      - models/${preprocess.output_tag}/final_model.keras
+      - models/${preprocess.output_tag}/training_history.json
+      - models/${preprocess.output_tag}/loss_history.csv
   
-  # evaluate:
-  #   cmd: python scripts/evaluate.py --config params.yaml
-  #   deps:
-  #     - scripts/evaluate.py
-  #     - models/${preprocess.output_tag}/
-  #     - data/preprocessed/${preprocess.output_tag}/test.h5
-  #   params:
-  #     - preprocess.output_tag
-  #   metrics:
-  #     - outputs/evaluation_metrics.json
+  evaluate:
+    cmd: python scripts/evaluate.py --config params.yaml --tag ${preprocess.output_tag} --model-dir models/${preprocess.output_tag}
+    deps:
+      - scripts/evaluate.py
+      - models/${preprocess.output_tag}/best_model.keras
+      - data/preprocessed/${preprocess.output_tag}/test.h5
+    params:
+      - preprocess.output_tag
+    outs:
+      - outputs/evaluation/${preprocess.output_tag}/predictions.npz
+    metrics:
+      - outputs/evaluation/${preprocess.output_tag}/evaluation_metrics.json:

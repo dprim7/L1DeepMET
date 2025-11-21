@@ -67,14 +67,42 @@ preprocess:
     test: 0.1
 
 
-# Training parameters (for future use)
+# Training parameters
 train:
-  batch_size: 32
-  learning_rate: 0.001
+  batch_size: 1024
   epochs: 100
-  # Add more training params as needed
+  mode: 1  # 0: direct regression, 1: per-particle weight, 2: global weight
 
-# Model parameters (for future use)  
+# Model parameters
 model:
-  # Add model architecture params as needed
-  pass
+  type: dense  # Model architecture type
+  units: [64, 32, 16]  # Hidden layer units
+  activation: tanh  # Activation function
+  with_bias: false  # Add bias to per-particle predictions
+
+# Loss function parameters
+loss:
+  mae_weight: 1.0
+  mse_weight: 1.0
+  binned_weight: 200.0
+
+# Optimizer parameters
+optimizer:
+  type: adam
+  learning_rate: 0.001
+
+# Callback parameters
+callbacks:
+  early_stopping:
+    monitor: val_loss
+    patience: 40
+  reduce_lr:
+    monitor: val_loss
+    factor: 0.5
+    patience: 10
+    min_delta: 0.0001
+    min_lr: 0.000001
+
+# Data parameters
+data:
+  maxNPF: 128  # Maximum number of PF candidates
