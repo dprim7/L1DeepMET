@@ -110,8 +110,8 @@ class TestDenseModel:
         model_config = model.get_config()
         
         assert isinstance(model_config, dict)
-        assert 'name' in model_config
-        assert model_config['name'] == 'DenseModel'
+        assert 'config' in model_config
+        assert model_config['config'] == config
     
     def test_model_with_bias(self, config, sample_inputs):
         """Test model with bias enabled."""

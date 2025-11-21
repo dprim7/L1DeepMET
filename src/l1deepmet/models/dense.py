@@ -7,6 +7,7 @@ from l1deepmet.losses.corrected import CorrectedCompositeLoss
 
 
 # TODO: Implement Dense models
+@keras.saving.register_keras_serializable(package="l1deepmet", name="Dense")
 class Dense(BaseModel):
     def __init__(self, config: Dict[str, Any], output_head: Optional[OutputHead] = None):
         super().__init__(config=config, output_head=output_head)
@@ -105,11 +106,13 @@ class Dense(BaseModel):
 
     def get_config(self) -> Dict[str, Any]:
         return {
-            "name": "DenseModel",
-            "trainable": True,
-            "dtype": "float32",
             "config": self.config
         }
+    
+    @classmethod
+    def from_config(cls, config):
+        """Create model from config."""
+        return cls(config=config["config"])
     
 
 class DenseQuantized(Dense):
