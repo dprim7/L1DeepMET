@@ -3,9 +3,8 @@
 import pytest # type: ignore
 import numpy as np # type: ignore
 import h5py # type: ignore
-import tempfile
+import tensorflow as tf # type: ignore
 from pathlib import Path
-import json
 
 from l1deepmet.config import Config
 from l1deepmet.train import load_h5_data, split_preprocessed_features, create_callbacks
@@ -115,7 +114,6 @@ class TestTrainingPipeline:
             binned_weight=100.0
         )
         
-        import tensorflow as tf
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
             loss=loss,
@@ -168,7 +166,6 @@ class TestTrainingPipeline:
         
         loss = CorrectedCompositeLoss()
         
-        import tensorflow as tf
         model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
             loss=loss

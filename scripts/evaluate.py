@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 L1DeepMET Evaluation Script
 
@@ -27,6 +26,7 @@ import tensorflow as tf # type: ignore
 
 from l1deepmet.config import load_config
 from l1deepmet.train import load_h5_data, split_preprocessed_features
+from l1deepmet.constants import EPSILON
 
 
 def setup_logging() -> logging.Logger:
@@ -65,7 +65,7 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float
     rmse_met = np.sqrt(mse_met)
     
     # Relative metrics
-    relative_error = np.abs(met_true - met_pred) / (met_true + 1e-10)
+    relative_error = np.abs(met_true - met_pred) / (met_true + EPSILON)
     mean_relative_error = np.mean(relative_error)
     
     # Calculate phi (angle)

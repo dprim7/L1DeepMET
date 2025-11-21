@@ -124,7 +124,7 @@ def main():
     if args.batch_size:
         cfg.setdefault("training", {})["batch_size"] = args.batch_size
     
-    # Get training parameters
+    # Get training parameters - support both 'train' and 'training' keys for compatibility
     training_cfg = cfg.get("train", cfg.get("training", {}))
     epochs = training_cfg.get("epochs", 100)
     batch_size = training_cfg.get("batch_size", 1024)
