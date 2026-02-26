@@ -3,7 +3,7 @@ from tensorflow.keras.models import Model # type: ignore
 from tensorflow.keras.layers import Dense, BatchNormalization, Activation, GlobalAveragePooling1D, Multiply # type: ignore
 
 
-def build_dense(cfg):
+def build_dense(cfg: dict)->Model:
         N = cfg["data"]["maxNPF"]
         x_cont = tf.keras.Input(shape=(N, 5), name="continuous_inputs")
         x_pxpy = tf.keras.Input(shape=(N, 2), name="momentum_inputs")
@@ -29,12 +29,13 @@ def build_dense(cfg):
             x = Multiply()([w, x_pxpy]) 
 
             x = GlobalAveragePooling1D(name="output")(x)
-        else: # TODO: implement mode 2
+        else: # mode 2: single global weight per event
             pooled = tf.keras.layers.GlobalAveragePooling1D(name="pool")(x)               # (B,C)
             w = tf.keras.layers.Dense(1, activation="linear", name="puppi_weight")(pooled)# (B,1)
-            #out = w * tf.reduce_sum(x_pxpy, axis=1, name="pmet")                          # (B,2)
+            pmet = tf.reduce_sum(x_pxpy, axis=1, name="pmet")                             # (B,2)
+            x = w * pmet                                                                   # (B,2)
 
-        outputs =x
+        outputs = x
         
         model = Model(inputs=inputs, outputs=outputs) # TODO:pass inputs as dict to match config?
         #TODO:check MET weight minus one need

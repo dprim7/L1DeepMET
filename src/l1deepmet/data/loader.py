@@ -96,11 +96,12 @@ class H5DataLoader:
         return inputs, pxpy, inputs_cat0, inputs_cat1, targets
     
     def create_tf_dataset(
-        self, 
+        self,
         split: str = "train",
         batch_size: int = 32,
         shuffle: bool = True,
-        split_features: bool = True
+        split_features: bool = True,
+        normfac: float = 1.0,
     ) -> tf.data.Dataset:
         """
         Args:
@@ -108,13 +109,18 @@ class H5DataLoader:
             batch_size: Batch size for training
             shuffle: Whether to shuffle the data
             split_features: If True, split features into model inputs
-            
+            normfac: Divide targets by this value to normalize MET scale (e.g. 100.0).
+                     Predictions from the model will be in units of normfac GeV.
+
         Returns:
             tf.data.Dataset ready for training
         """
         if split_features:
             inputs, pxpy, inputs_cat0, inputs_cat1, targets = self.load_split_data(split)
-            
+
+            if normfac != 1.0:
+                targets = targets / normfac
+
             # Create dataset with multiple inputs
             dataset = tf.data.Dataset.from_tensor_slices({
                 'continuous_inputs': inputs,
@@ -123,7 +129,7 @@ class H5DataLoader:
                 'charge_inputs': inputs_cat1,
                 'targets': targets
             })
-            
+
             # Map to (inputs, targets) format for training
             dataset = dataset.map(
                 lambda x: (
@@ -138,6 +144,8 @@ class H5DataLoader:
             )
         else:
             features, targets = self.load_data(split)
+            if normfac != 1.0:
+                targets = targets / normfac
             dataset = tf.data.Dataset.from_tensor_slices((features, targets))
         
         if shuffle and split == "train":
