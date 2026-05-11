@@ -1,4 +1,5 @@
 outputs/
+hls_output/
 checkpoints/
 logs/
 *.h5
