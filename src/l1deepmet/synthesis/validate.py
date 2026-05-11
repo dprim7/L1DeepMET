@@ -42,21 +42,62 @@ class ValidationResult:
     plots: Dict[str, str] = field(default_factory=dict)
 
 
-def _model_inputs_from_features(X: np.ndarray) -> Dict[str, np.ndarray]:
+def _model_inputs_from_features(
+    X: np.ndarray,
+    *,
+    model: "tf.keras.Model | None" = None,
+) -> Dict[str, np.ndarray]:
     """Split the (N, 128, 9) preprocessed feature tensor into the dict the
     Keras model expects.
 
-    Note: pdgid / charge are categorical, but we pass them as float32 because
-    hls4ml's compiled bit-accurate library expects float32 for all inputs
-    (it casts internally to whatever each input layer's declared precision is).
-    Passing actual int32 arrays raises ``TypeError: array must have data type
-    float32`` from the underlying ctypes call.
+    Auto-detects HGQ2-style models: if the loaded model declares
+    ``pdgid_inputs`` / ``charge_inputs`` with a 3D shape ``(B, 128, vocab)``,
+    the categorical columns are one-hot encoded. Otherwise the FP32
+    convention of ``(B, 128)`` int-style is used.
+
+    Note: pdgid / charge are passed as float32 because hls4ml's compiled
+    bit-accurate library expects float32 for all inputs (it casts internally
+    to whatever each input layer's declared precision is). Passing actual
+    int32 arrays raises ``TypeError: array must have data type float32``
+    from the underlying ctypes call.
+
+    Args:
+        X:     preprocessed (N, 128, 9) feature tensor.
+        model: the Keras model whose ``inputs`` are inspected to decide
+               whether to one-hot encode. Pass ``None`` for the FP32 default.
     """
+    continuous = X[:, :, 0:5].astype(np.float32)
+    momentum   = X[:, :, 5:7].astype(np.float32)
+    pdgid_int  = X[:, :, 7]
+    charge_int = X[:, :, 8]
+
+    # Decide whether to one-hot from the model's declared input spec.
+    pdgid_one_hot_depth = None
+    charge_one_hot_depth = None
+    if model is not None:
+        for layer in model.inputs:
+            shape = tuple(layer.shape)
+            if layer.name == "pdgid_inputs" and len(shape) == 3 and shape[-1] is not None:
+                pdgid_one_hot_depth = int(shape[-1])
+            elif layer.name == "charge_inputs" and len(shape) == 3 and shape[-1] is not None:
+                charge_one_hot_depth = int(shape[-1])
+
+    if pdgid_one_hot_depth is None:
+        pdgid_out = pdgid_int.astype(np.float32)
+    else:
+        idx = np.clip(pdgid_int.astype(np.int32), 0, pdgid_one_hot_depth - 1)
+        pdgid_out = np.eye(pdgid_one_hot_depth, dtype=np.float32)[idx]
+    if charge_one_hot_depth is None:
+        charge_out = charge_int.astype(np.float32)
+    else:
+        idx = np.clip(charge_int.astype(np.int32), 0, charge_one_hot_depth - 1)
+        charge_out = np.eye(charge_one_hot_depth, dtype=np.float32)[idx]
+
     return {
-        "continuous_inputs": X[:, :, 0:5].astype(np.float32),
-        "momentum_inputs":   X[:, :, 5:7].astype(np.float32),
-        "pdgid_inputs":      X[:, :, 7].astype(np.float32),
-        "charge_inputs":     X[:, :, 8].astype(np.float32),
+        "continuous_inputs": continuous,
+        "momentum_inputs":   momentum,
+        "pdgid_inputs":      pdgid_out,
+        "charge_inputs":     charge_out,
     }
 
 
@@ -101,7 +142,7 @@ def compare_keras_vs_hls(
         Y = f["targets"][:n_events]
 
     logger.info("Validating on %d events from %s", len(X), test_h5_path)
-    mi = _model_inputs_from_features(X)
+    mi = _model_inputs_from_features(X, model=keras_model)
 
     keras_pred = keras_model.predict(mi, batch_size=512, verbose=0) * normfac
     # hls4ml's .predict expects the inputs in the input-layer order, all as

@@ -31,8 +31,15 @@ os.environ.setdefault("TF_NUM_INTRAOP_THREADS", "4")
 import numpy as np  # type: ignore
 import tensorflow as tf  # type: ignore
 
-tf.config.threading.set_inter_op_parallelism_threads(2)
-tf.config.threading.set_intra_op_parallelism_threads(4)
+# Threading must be set before TF runtime initializes. If we're being imported
+# from a process that already touched TF (e.g. a pytest session that loaded
+# other TF-using modules first), the calls raise — caller has already set up
+# threading, skipping is fine.
+try:
+    tf.config.threading.set_inter_op_parallelism_threads(2)
+    tf.config.threading.set_intra_op_parallelism_threads(4)
+except RuntimeError:
+    pass
 from tensorflow.keras.layers import (  # type: ignore
     Activation,
     Add,

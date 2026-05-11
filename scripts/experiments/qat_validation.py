@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
-"""QAT validation experiment driver.
+"""Train a QAT + pruned model and compare it to the FP32 baseline.
 
-Trains and evaluates **the same architecture** under two regimes — full
-precision (FP32) and HGQ2 quantization-aware training — and compares each
-model in Keras (full-precision inference) vs hls4ml bit-accurate
-fixed-point simulation. The expected outcome (the "QAT thesis"):
+Trains the bounded-scalar-weight L1DeepMET model two ways under the same
+architecture / loss / seed:
 
-  - FP32 model: large gap between Keras and hls4ml (the precision-degradation
-    finding from earlier experiments).
-  - HGQ2 model: small or zero gap between Keras and hls4ml, because the
-    learned bit-widths were trained against.
+  1. FP32 (full-precision floating-point)
+  2. HGQ2 (gradient-based quantization-aware training; bit-widths of zero =
+     pruned weights, so this is QAT + pruning in one shot)
+
+Then converts both to hls4ml HLS C++ and runs bit-accurate fixed-point
+simulation, so the report can answer:
+
+  - How does the QAT-trained model's *Keras* performance compare to the FP32
+    baseline? (QAT slightly trades flexibility for FPGA fidelity.)
+  - How does the QAT-trained model's *fixed-point* performance compare to the
+    FP32 model's fixed-point performance? (This is the deployment-realistic
+    comparison; the QAT model is what would actually ship.)
+  - What bit-widths / sparsity did HGQ2 learn? (Indirectly answers "how much
+    smaller is the firmware.")
 
 Architecture: bounded scalar weight head, w=64, d=3, embeddings — the
 saved residual-ablation winner. Loss: MAE only, no xy_balance.
@@ -57,7 +65,13 @@ import h5py  # type: ignore  # noqa: E402
 import numpy as np  # type: ignore  # noqa: E402
 import tensorflow as tf  # type: ignore  # noqa: E402
 
-tf.config.threading.set_intra_op_parallelism_threads(1)
+# Try to clamp TF threading on shared systems. Will raise if TF has already
+# been initialized (e.g. when imported from a test process that touched TF
+# earlier); skipping is fine in that case — caller already configured it.
+try:
+    tf.config.threading.set_intra_op_parallelism_threads(1)
+except RuntimeError:
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +210,95 @@ PHYSICS_KEYS = [
 ]
 
 
+def extract_bitwidth_stats(model_path: Path) -> dict:
+    """Walk the saved HGQ2 model and summarize learned bit-widths.
+
+    Returns a dict like::
+
+        {
+          "per_layer": [
+            {"name": "...", "kind": "kernel",  "shape": [..],
+             "min": ., "max": ., "mean": ., "n_zero": int, "n_total": int,
+             "total_bits": ...},
+            ...
+          ],
+          "total_kernel_bits":    <int>,
+          "total_kernel_zeros":   <int>,
+          "total_kernel_params":  <int>,
+          "sparsity_pct":         <float>,   # zeros / total
+          "avg_kernel_bitwidth":  <float>,
+        }
+
+    "Total bits" = Σ over kernel elements of learned bit-width — a rough proxy
+    for firmware weight memory (the actual FPGA cost also depends on layer
+    fanout / fan-in patterns and is reported by Vivado HLS synthesis, but this
+    is a useful pre-synth gauge).
+
+    Falls back gracefully if ``model_path`` isn't an HGQ2 model
+    (returns ``{"per_layer": [], ...}``).
+    """
+    import tensorflow as tf
+    import numpy as np
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from synthesize import load_custom_objects
+    co = load_custom_objects()
+    try:
+        model = tf.keras.models.load_model(model_path, custom_objects=co,
+                                            compile=False)
+    except Exception as e:
+        return {"per_layer": [], "error": f"could not load model: {e}"}
+
+    per_layer = []
+    total_kernel_bits = 0
+    total_kernel_zeros = 0
+    total_kernel_params = 0
+
+    for layer in model.layers:
+        # HGQ2 quantizers live on attributes `kq` (kernel), `iq` (input),
+        # `bq` (bias). Each has a `.bits` tensor with per-channel values.
+        for kind in ("kq", "iq", "bq"):
+            q = getattr(layer, kind, None)
+            if q is None or not hasattr(q, "bits"):
+                continue
+            bits = q.bits
+            try:
+                bits_np = bits.numpy() if hasattr(bits, "numpy") else np.asarray(bits)
+            except Exception:
+                continue
+            if bits_np.size == 0:
+                continue
+            row = {
+                "layer": layer.name,
+                "kind": kind,
+                "shape": list(bits_np.shape),
+                "min": float(bits_np.min()),
+                "max": float(bits_np.max()),
+                "mean": float(bits_np.mean()),
+                "n_zero": int((bits_np <= 0.5).sum()),
+                "n_total": int(bits_np.size),
+                "sum_bits": float(bits_np.sum()),
+            }
+            per_layer.append(row)
+            if kind == "kq":
+                total_kernel_bits += int(bits_np.sum())
+                total_kernel_zeros += int((bits_np <= 0.5).sum())
+                total_kernel_params += int(bits_np.size)
+
+    sparsity_pct = (100.0 * total_kernel_zeros / total_kernel_params
+                     if total_kernel_params else 0.0)
+    avg_bitwidth = (total_kernel_bits / total_kernel_params
+                     if total_kernel_params else 0.0)
+    return {
+        "per_layer": per_layer,
+        "total_kernel_bits": total_kernel_bits,
+        "total_kernel_zeros": total_kernel_zeros,
+        "total_kernel_params": total_kernel_params,
+        "sparsity_pct": round(sparsity_pct, 2),
+        "avg_kernel_bitwidth": round(avg_bitwidth, 3),
+    }
+
+
 def _fmt(val, key) -> str:
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return "  —  "
@@ -210,93 +313,188 @@ def write_report(
     fp32_validation: dict,
     hgq2_validation: dict,
     config: dict,
+    bitwidth_stats: dict,
 ) -> Path:
-    """Produce a Markdown comparison report at ``output_dir/report.md``."""
+    """Markdown report focused on the QAT+pruned model and its improvements."""
     out_path = output_dir / "report.md"
     lines = []
-
     L = lines.append
-    L("# QAT validation: FP32 vs HGQ2 (May 2026)")
+
+    # ── Headline ─────────────────────────────────────────────────────────────
+    L("# QAT + pruned L1DeepMET model (May 2026)")
     L("")
-    L("> Tests the QAT thesis: training the model with quantization-aware "
-      "bit-width learning (HGQ2) should give a Keras vs hls4ml bit-accurate "
-      "agreement that the float-trained baseline does not.")
+    L("> Trains a quantization-aware + pruned version of the bounded scalar "
+      "weight model via HGQ2 and reports how it compares to the full-precision "
+      "baseline at the same architecture. The deliverable is **a deployable "
+      "QAT+pruned model** (the ``hgq2/`` folder), not a methodology paper.")
     L("")
-    L("## Experimental setup")
+
+    hgq2_k = hgq2_validation["keras_card"]
+    hgq2_h = hgq2_validation["hls_card"]
+    fp32_k = fp32_validation["keras_card"]
+    fp32_h = fp32_validation["hls_card"]
+
+    # ── Bottom-line numbers up top ──────────────────────────────────────────
+    L("## Headline")
+    L("")
+    L("| | X IQR/2 | pT IQR/2 | AUC | Sparsity | Avg kernel bits |")
+    L("|---|---:|---:|---:|---:|---:|")
+    L(f"| **FP32 baseline (Keras inference)** | "
+      f"{_fmt(fp32_k.get('met_x_resolution'),'x')} | "
+      f"{_fmt(fp32_k.get('met_pt_resolution'),'pt')} | "
+      f"{_fmt(fp32_k.get('auc'),'auc')} | 0% | 32 (float) |")
+    L(f"| **FP32 baseline (hls4ml fixed-point)** | "
+      f"{_fmt(fp32_h.get('met_x_resolution'),'x')} | "
+      f"{_fmt(fp32_h.get('met_pt_resolution'),'pt')} | "
+      f"{_fmt(fp32_h.get('auc'),'auc')} | 0% | ap_fixed<32,16> |")
+    L(f"| **HGQ2 QAT+pruned (Keras inference)** | "
+      f"{_fmt(hgq2_k.get('met_x_resolution'),'x')} | "
+      f"{_fmt(hgq2_k.get('met_pt_resolution'),'pt')} | "
+      f"{_fmt(hgq2_k.get('auc'),'auc')} | "
+      f"{bitwidth_stats.get('sparsity_pct', 0):.1f}% | "
+      f"{bitwidth_stats.get('avg_kernel_bitwidth', 0):.2f} |")
+    L(f"| **HGQ2 QAT+pruned (hls4ml fixed-point)** | "
+      f"{_fmt(hgq2_h.get('met_x_resolution'),'x')} | "
+      f"{_fmt(hgq2_h.get('met_pt_resolution'),'pt')} | "
+      f"{_fmt(hgq2_h.get('auc'),'auc')} | "
+      f"{bitwidth_stats.get('sparsity_pct', 0):.1f}% | "
+      f"learned (see below) |")
+    L("")
+    L("Two comparisons worth pulling out from the table:")
+    L("")
+    if all(np.isfinite([fp32_k.get('met_x_resolution', np.nan),
+                         hgq2_k.get('met_x_resolution', np.nan)])):
+        keras_dx = hgq2_k['met_x_resolution'] - fp32_k['met_x_resolution']
+        L(f"- **QAT cost in Keras**: HGQ2 vs FP32 X resolution = "
+          f"{keras_dx:+.2f} GeV. (Positive = QAT slightly worse than FP32 in "
+          f"floating-point; this is the price of training under bit-width "
+          f"constraints.)")
+    if all(np.isfinite([fp32_h.get('met_x_resolution', np.nan),
+                         hgq2_h.get('met_x_resolution', np.nan)])):
+        hls_dx = hgq2_h['met_x_resolution'] - fp32_h['met_x_resolution']
+        L(f"- **What ships to the FPGA**: HGQ2 hls4ml vs FP32 hls4ml X "
+          f"resolution = {hls_dx:+.2f} GeV. (This is the realistic "
+          f"deployment comparison; HGQ2 was trained against the precision "
+          f"loss the FP32 model suffers post-training quantization.)")
+    L("")
+
+    # ── Experimental setup ──────────────────────────────────────────────────
+    L("## Setup")
     L("")
     L(f"- Architecture: bounded scalar weight head, width={config['width']}, "
-      f"depth={config['depth']}, embeddings enabled.")
-    L(f"- Loss: MAE only (no xy_balance, no BinnedDeviation). Matches the "
-      f"loss-form-ablation winner on `great-ishizaka`.")
-    L(f"- Optimizer: AdamW (lr=1e-3, clipnorm=1.0).")
+      f"depth={config['depth']}, embeddings enabled. Same shape both regimes.")
+    L("- Loss: MAE only, no xy_balance, no BinnedDeviation. (Matches the loss-"
+      "form-ablation winner on `great-ishizaka`.)")
+    L("- Optimizer: AdamW (lr=1e-3, clipnorm=1.0).")
     L(f"- Training: up to {config['epochs']} epochs, batch size 256, "
       f"EarlyStopping patience 10 on val_loss.")
     L(f"- Seed: {config['seed']} (TF + numpy).")
-    L(f"- Validation events: {config['n_validation_events']} from test split.")
+    L(f"- Validation events: {config['n_validation_events']} from the test split.")
     L(f"- Data: `{config['data_dir']}`.")
+    L("- HGQ2 path: pdgid / charge inputs pre-encoded one-hot (hls4ml cannot "
+      "synthesize ``tf.one_hot`` in-graph). Activations via "
+      "``hgq.layers.activation.Activation``; sum-over-particles via "
+      "``QGlobalAveragePooling1D`` + fixed ``QDense(N·I)`` "
+      "(workarounds documented in `src/l1deepmet/quantization/README.md`).")
     L("")
-    L("## Comparison: full physics card")
+
+    # ── Full physics card ───────────────────────────────────────────────────
+    L("## Full physics card")
     L("")
-    L("Four cells per metric. The interesting numbers are the Keras→hls4ml "
-      "deltas: small Δ means QAT worked, large Δ means precision was lost.")
-    L("")
-    header = "| Metric | FP32 Keras | FP32 hls4ml | Δ (hls − keras) | HGQ2 Keras | HGQ2 hls4ml | Δ (hls − keras) |"
-    sep = "|---|---:|---:|---:|---:|---:|---:|"
-    L(header)
-    L(sep)
+    L("| Metric | FP32 Keras | FP32 hls4ml | Δ (hls − keras) | HGQ2 Keras | HGQ2 hls4ml | Δ (hls − keras) |")
+    L("|---|---:|---:|---:|---:|---:|---:|")
     for key, label in PHYSICS_KEYS:
-        fp32_k = fp32_validation["keras_card"].get(key)
-        fp32_h = fp32_validation["hls_card"].get(key)
-        hgq2_k = hgq2_validation["keras_card"].get(key)
-        hgq2_h = hgq2_validation["hls_card"].get(key)
-        fp32_d = (fp32_h - fp32_k) if (fp32_k is not None and fp32_h is not None
-                                       and not np.isnan(fp32_k) and not np.isnan(fp32_h)) else None
-        hgq2_d = (hgq2_h - hgq2_k) if (hgq2_k is not None and hgq2_h is not None
-                                       and not np.isnan(hgq2_k) and not np.isnan(hgq2_h)) else None
-        row = (
-            f"| {label} | "
-            f"{_fmt(fp32_k, key)} | {_fmt(fp32_h, key)} | "
-            f"{_fmt(fp32_d, key) if fp32_d is not None else '  —  '} | "
-            f"{_fmt(hgq2_k, key)} | {_fmt(hgq2_h, key)} | "
-            f"{_fmt(hgq2_d, key) if hgq2_d is not None else '  —  '} |"
-        )
-        L(row)
+        fk = fp32_k.get(key); fh = fp32_h.get(key)
+        hk = hgq2_k.get(key); hh = hgq2_h.get(key)
+        fd = (fh - fk) if (fk is not None and fh is not None
+                            and np.isfinite(fk) and np.isfinite(fh)) else None
+        hd = (hh - hk) if (hk is not None and hh is not None
+                            and np.isfinite(hk) and np.isfinite(hh)) else None
+        L(f"| {label} | "
+          f"{_fmt(fk, key)} | {_fmt(fh, key)} | {_fmt(fd, key) if fd is not None else '  —  '} | "
+          f"{_fmt(hk, key)} | {_fmt(hh, key)} | {_fmt(hd, key) if hd is not None else '  —  '} |")
     L("")
-    L("## PUPPI reference (baseline at the architecture's identity init)")
+    L("PUPPI MET (reference): "
+      f"X = {fp32_k.get('puppi_met_x_resolution', float('nan')):.2f}, "
+      f"pT = {fp32_k.get('puppi_met_pt_resolution', float('nan')):.2f}, "
+      f"AUC = {fp32_k.get('puppi_auc', float('nan')):.4f}.")
     L("")
-    L(f"- PUPPI MET X IQR/2 = {fp32_validation['keras_card'].get('puppi_met_x_resolution', float('nan')):.2f} GeV")
-    L(f"- PUPPI MET Y IQR/2 = {fp32_validation['keras_card'].get('puppi_met_y_resolution', float('nan')):.2f} GeV")
-    L(f"- PUPPI MET pT IQR/2 = {fp32_validation['keras_card'].get('puppi_met_pt_resolution', float('nan')):.2f} GeV")
-    L(f"- PUPPI AUC = {fp32_validation['keras_card'].get('puppi_auc', float('nan')):.4f}")
+
+    # ── Bit-width / pruning analysis ────────────────────────────────────────
+    L("## Learned bit-widths and pruning")
     L("")
+    if bitwidth_stats.get("per_layer"):
+        L(f"- Total kernel parameters: **{bitwidth_stats['total_kernel_params']:,}**")
+        L(f"- Kernel parameters at bit-width 0 (pruned): "
+          f"**{bitwidth_stats['total_kernel_zeros']:,}** "
+          f"({bitwidth_stats['sparsity_pct']:.1f}%)")
+        L(f"- Average non-pruned kernel bit-width: "
+          f"**{bitwidth_stats['avg_kernel_bitwidth']:.2f}** bits")
+        L(f"- Total kernel bits (Σ learned bit-widths over all elements): "
+          f"**{bitwidth_stats['total_kernel_bits']:,}**")
+        L("")
+        L("Per-layer breakdown (kernel quantizer only; input/bias quantizers in `comparison.json`):")
+        L("")
+        L("| Layer | Shape | Bits min/mean/max | Pruned |")
+        L("|---|---|---:|---:|")
+        for row in bitwidth_stats["per_layer"]:
+            if row["kind"] != "kq":
+                continue
+            shape_str = "×".join(str(s) for s in row["shape"])
+            L(f"| {row['layer']} | {shape_str} | "
+              f"{row['min']:.1f} / {row['mean']:.2f} / {row['max']:.1f} | "
+              f"{row['n_zero']}/{row['n_total']} |")
+    else:
+        L("(Bit-width extraction unavailable — see `comparison.json` for "
+          "the raw model. Likely cause: HGQ2 not installed or the model "
+          "is not an HGQ2 model.)")
+    L("")
+    L("The total-kernel-bits number is a pre-synthesis proxy for the weight "
+      "memory footprint on the FPGA — the actual LUT/DSP/BRAM is reported by "
+      "Vivado HLS synthesis (not yet wired into this driver; ``--synth`` flag "
+      "in `scripts/synthesize.py` is reserved for that step).")
+    L("")
+
+    # ── Artifacts ───────────────────────────────────────────────────────────
     L("## Artifacts")
     L("")
     L("```")
     L(f"{output_dir.name}/")
     L("├── fp32/")
-    L("│   ├── best_model.keras")
-    L("│   ├── result.json")
-    L("│   └── hls/                    ← HLS C++ project + validation.json + plots")
+    L("│   └── bounded_mae_only_xy0_seed{seed}/")
+    L("│       ├── best_model.keras            ← float32 model")
+    L("│       ├── result.json")
+    L("│       └── hls/                        ← hls4ml C++ + bit-accurate sim")
     L("├── hgq2/")
-    L("│   ├── best_model.keras")
+    L("│   ├── best_model.keras                ← QAT+pruned model (the deliverable)")
     L("│   ├── result.json")
-    L("│   └── hls/")
-    L("├── comparison.json             ← machine-readable copy of both cards")
-    L("└── report.md                   ← this file")
+    L("│   └── hls/                            ← hls4ml C++ + bit-accurate sim")
+    L("├── comparison.json                     ← machine-readable physics cards + bit-widths")
+    L("├── run.log                             ← full stdout from the experiment")
+    L("└── report.md                           ← this file")
     L("```")
     L("")
+
+    # ── Reproducibility ─────────────────────────────────────────────────────
     L("## Reproducing this experiment")
-    L("")
-    L("From the worktree root:")
     L("")
     L("```bash")
     L("source /home/users/dprimosc/micromamba/etc/profile.d/micromamba.sh")
     L("micromamba activate l1deepmet")
     L("")
-    L(f"python scripts/experiments/qat_validation.py \\")
+    L("python scripts/experiments/qat_validation.py \\")
     L(f"    --output-dir {output_dir} \\")
     L(f"    --epochs {config['epochs']} \\")
     L(f"    --seed {config['seed']}")
+    L("```")
+    L("")
+    L("Or train just the QAT model (faster, if you only want the deliverable "
+      "and not the FP32 comparison):")
+    L("")
+    L("```bash")
+    L("python scripts/train_hgq2.py --output-dir hgq2_only --epochs 30 --seed 42")
+    L("python scripts/synthesize.py --model hgq2_only/best_model.keras \\")
+    L("    --output-dir hgq2_only/hls --no-export-pass")
     L("```")
     L("")
     out_path.write_text("\n".join(lines))
@@ -377,6 +575,13 @@ def main() -> int:
         n_validation_events=args.n_validation_events,
     )
 
+    # ── Bit-width / pruning analysis on the trained HGQ2 model ─────────────
+    log.info("Extracting learned bit-widths + sparsity from HGQ2 model…")
+    bitwidth_stats = extract_bitwidth_stats(hgq2_dir / "best_model.keras")
+    log.info("HGQ2 kernel sparsity: %s%% (avg bit-width %.2f)",
+             bitwidth_stats.get("sparsity_pct", "?"),
+             bitwidth_stats.get("avg_kernel_bitwidth", 0))
+
     # ── Combined comparison.json ────────────────────────────────────────────
     comparison = {
         "config": config,
@@ -393,6 +598,7 @@ def main() -> int:
             "delta_card": hgq2_validation.get("delta_card"),
             "n_events": hgq2_validation.get("n_events"),
             "model_path": str((hgq2_dir / "best_model.keras").resolve()),
+            "bitwidth_stats": bitwidth_stats,
         },
     }
     with open(args.output_dir / "comparison.json", "w") as f:
@@ -404,6 +610,7 @@ def main() -> int:
         fp32_validation=fp32_validation,
         hgq2_validation=hgq2_validation,
         config=config,
+        bitwidth_stats=bitwidth_stats,
     )
     log.info("Wrote report: %s", report_path)
 

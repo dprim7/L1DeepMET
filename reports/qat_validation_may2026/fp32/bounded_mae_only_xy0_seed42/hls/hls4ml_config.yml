@@ -1,0 +1,153 @@
+Backend: Vivado
+ClockPeriod: 5.0
+ClockUncertainty: 12.5%
+HLSConfig:
+  LayerName:
+    act_0:
+      Precision:
+        result: auto
+      Trace: true
+    act_1:
+      Precision:
+        result: auto
+      Trace: true
+    act_2:
+      Precision:
+        result: auto
+      Trace: true
+    avg_over_particles:
+      Precision:
+        result: auto
+      Trace: true
+    bn_0:
+      Precision:
+        bias: auto
+        result: auto
+        scale: auto
+      Trace: true
+    bn_1:
+      Precision:
+        bias: auto
+        result: auto
+        scale: auto
+      Trace: true
+    bn_2:
+      Precision:
+        bias: auto
+        result: auto
+        scale: auto
+      Trace: true
+    bounded_scale:
+      Precision:
+        bias: auto
+        result: auto
+        weight: auto
+      Trace: true
+    bounded_tanh:
+      Precision:
+        result: auto
+      Trace: true
+    charge_inputs:
+      Precision:
+        result: ap_uint<4>
+      Trace: true
+    concat_cont_pdgid:
+      Precision:
+        result: auto
+      Trace: true
+    concat_features:
+      Precision:
+        result: auto
+      Trace: true
+    continuous_inputs:
+      Precision:
+        result: auto
+      Trace: true
+    dense_0:
+      Precision:
+        bias: auto
+        result: auto
+        weight: auto
+      Trace: true
+    dense_1:
+      Precision:
+        bias: auto
+        result: auto
+        weight: auto
+      Trace: true
+    dense_2:
+      Precision:
+        bias: auto
+        result: auto
+        weight: auto
+      Trace: true
+    emb_charge:
+      Precision:
+        embeddings: auto
+        result: auto
+      Trace: true
+    emb_pdgid:
+      Precision:
+        embeddings: auto
+        result: auto
+      Trace: true
+    met_weight:
+      Precision:
+        bias: auto
+        result: auto
+        weight: auto
+      Trace: true
+    momentum_inputs:
+      Precision:
+        result: auto
+      Trace: true
+    output:
+      Precision:
+        bias: auto
+        result: auto
+        weight: auto
+      Trace: true
+    pdgid_inputs:
+      Precision:
+        result: ap_uint<4>
+      Trace: true
+    weight_pxpy:
+      Precision:
+        result: auto
+      Trace: true
+  Model:
+    BitExact: null
+    BramFactor: 1000000000
+    Precision:
+      default: ap_fixed<32,16>
+    ReuseFactor: 1
+    Strategy: Latency
+    TraceOutput: false
+IOType: io_parallel
+InputData: null
+InputShapes:
+  charge_inputs:
+  - 128
+  continuous_inputs:
+  - 128
+  - 5
+  momentum_inputs:
+  - 128
+  - 2
+  pdgid_inputs:
+  - 128
+KerasModel: !keras_model '/home/users/dprimosc/L1DeepMET/.claude/worktrees/ml-pipeline/reports/qat_validation_may2026/fp32/bounded_mae_only_xy0_seed42/hls/keras_model.keras'
+OutputDir: /home/users/dprimosc/L1DeepMET/.claude/worktrees/ml-pipeline/reports/qat_validation_may2026/fp32/bounded_mae_only_xy0_seed42/hls
+OutputPredictions: null
+OutputShapes:
+  layer23_out:
+  - 2
+Part: xcvu13p-flga2577-2-e
+ProjectName: l1deepmet
+Stamp: ce979c52
+Version: 1.0.0
+WriterConfig:
+  Namespace: null
+  TBOutputStream: both
+  WriteTar: false
+  WriteWeightsTxt: true
