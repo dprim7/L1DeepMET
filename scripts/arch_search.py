@@ -103,6 +103,12 @@ class ArchConfig:
                                   # 3 blocks, d_model 64, key_dim ~6 to hit 9k).
     ffn_dim: int = 16             # transformer only: FFN hidden dim (kept tiny per
                                   # arXiv:2402.01047 to fit L1 latency / params)
+    rho_depth: int = 0            # mode 0 only: depth of the ρ MLP applied *after*
+                                  # the per-particle aggregation. 0 means the original
+                                  # single Dense(2) head (default for compatibility).
+                                  # > 0 turns mode 0 into a proper Deep Sets head
+                                  # (ρ ∘ aggregator ∘ φ) as in arXiv:2509.24371.
+    rho_width: int = 0            # ρ MLP hidden width. 0 → use cfg.width.
 
 
 def generate_search_configs() -> List[ArchConfig]:
@@ -458,8 +464,22 @@ def build_model(cfg: ArchConfig) -> Model:
             else:
                 out = GlobalAveragePooling1D(name="output")(weighted) # (B, 2)
     else:
-        # Mode 0: global pool features, then regress MET directly
-        pooled = GlobalAveragePooling1D(name="pool")(x)           # (B, width)
+        # Mode 0: aggregate per-particle features, then regress MET directly.
+        # When rho_depth > 0 this becomes a textbook Deep Sets head
+        # (ρ ∘ aggregator ∘ φ), per arXiv:2509.24371. Aggregator: sum if use_sum
+        # (canonical Deep Sets / momentum-preserving), else GAP (current default).
+        if cfg.use_sum:
+            pooled = SumOverParticles(name="pool")(x)         # (B, width)
+        else:
+            pooled = GlobalAveragePooling1D(name="pool")(x)   # (B, width)
+        if cfg.rho_depth > 0:
+            rho_w = cfg.rho_width if cfg.rho_width > 0 else cfg.width
+            for j in range(cfg.rho_depth):
+                pooled = Dense(rho_w, activation=None,
+                               kernel_initializer="lecun_uniform",
+                               name=f"rho_dense_{j}")(pooled)
+                pooled = BatchNormalization(momentum=0.95, name=f"rho_bn_{j}")(pooled)
+                pooled = Activation(cfg.activation, name=f"rho_act_{j}")(pooled)
         out = Dense(2, activation="linear", name="output")(pooled)  # (B, 2)
 
     # All four inputs are always declared so the model accepts the full
