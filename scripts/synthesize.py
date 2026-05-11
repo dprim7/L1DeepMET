@@ -50,13 +50,16 @@ def load_custom_objects() -> dict:
     """All the custom Keras layers and losses our models may use.
 
     Centralized here so the CLI can load any saved model from any ablation
-    without the caller having to know which subset of layers was used.
+    (full-precision or HGQ2-QAT) without the caller having to know which
+    subset of layers was used.
     """
     from arch_search import (
         BoundedWeight, CastToInt, ShiftByConstant, SumOverParticles, ZeroReduce,
     )
     from l1deepmet.losses.corrected import CorrectedCompositeLoss
-    return {
+
+    co: dict = {
+        # Full-precision custom layers (scripts/arch_search.py).
         "CastToInt": CastToInt,
         "ZeroReduce": ZeroReduce,
         "ShiftByConstant": ShiftByConstant,
@@ -64,6 +67,38 @@ def load_custom_objects() -> dict:
         "BoundedWeight": BoundedWeight,
         "CorrectedCompositeLoss": CorrectedCompositeLoss,
     }
+
+    # HGQ2 quantized layers. Add every public Q* class (and the
+    # quantizer-config / activation primitives saved models can reference).
+    # Optional: skip if HGQ2 isn't installed in this env.
+    try:
+        import hgq.layers as _hgq_layers
+        for _name in dir(_hgq_layers):
+            if _name.startswith("Q") and _name[1:2].isupper():
+                co[_name] = getattr(_hgq_layers, _name)
+        # The non-Q-prefixed Activation in hgq.layers.activation we use.
+        from hgq.layers.activation import Activation as _QActivation
+        co.setdefault("Activation", _QActivation)
+        # HGQ2 quantizer config types referenced by the saved model JSON.
+        import hgq.quantizer.config as _qcfg
+        for _name in dir(_qcfg):
+            cls = getattr(_qcfg, _name, None)
+            if isinstance(cls, type) and not _name.startswith("_"):
+                co.setdefault(_name, cls)
+        import hgq.constraints as _hc
+        for _name in dir(_hc):
+            cls = getattr(_hc, _name, None)
+            if isinstance(cls, type) and not _name.startswith("_"):
+                co.setdefault(_name, cls)
+        import hgq.regularizers as _hr
+        for _name in dir(_hr):
+            cls = getattr(_hr, _name, None)
+            if isinstance(cls, type) and not _name.startswith("_"):
+                co.setdefault(_name, cls)
+    except ImportError:
+        pass
+
+    return co
 
 
 def parse_args() -> argparse.Namespace:

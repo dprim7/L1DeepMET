@@ -29,3 +29,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+    "slow: tests that take minutes (training/HLS); deselect with -m 'not slow'",
+]

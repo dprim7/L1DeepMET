@@ -19,6 +19,17 @@ one-hot replacement for the Embedding lookup (HGQ2 lacks a QEmbedding).
 Entry point: :func:`hgq2_model.build_hgq2_model`.
 """
 
+from .data import (
+    encode_split_for_hgq2,
+    make_hgq2_tf_dataset_from_features,
+    make_hgq2_tf_dataset_from_h5,
+)
 from .hgq2_model import build_hgq2_model, one_hot_encode_features
 
-__all__ = ["build_hgq2_model", "one_hot_encode_features"]
+__all__ = [
+    "build_hgq2_model",
+    "one_hot_encode_features",
+    "encode_split_for_hgq2",
+    "make_hgq2_tf_dataset_from_features",
+    "make_hgq2_tf_dataset_from_h5",
+]
