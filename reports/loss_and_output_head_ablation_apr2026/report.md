@@ -99,29 +99,39 @@ So **conclusions are reproducible; per-seed numbers are not**. To make per-seed 
 From the worktree root (`/home/users/dprimosc/L1DeepMET/.claude/worktrees/great-ishizaka`):
 
 ```bash
-# Activate env
 source /home/users/dprimosc/micromamba/etc/profile.d/micromamba.sh
 micromamba activate l1deepmet
 
-# 1. Loss-form ablation (~2 hr; 6 configs × 3 seeds)
-python scripts/loss_ablation.py \
-  --epochs 30 --seeds 42 123 456 \
-  --output-dir outputs/loss_form_ablation_apr2026
+# 1. BinnedDeviation ablation (3 cells × 3 seeds, ~1.5 hr)
+python scripts/ablation.py --recipe binned_weight \
+  --epochs 30 --seeds 42 123 456
 
-# 2. Output-head / residual ablation (~2 hr; 4 configs × 3 seeds)
-python scripts/residual_ablation.py \
-  --epochs 30 --seeds 42 123 456 \
-  --output-dir outputs/residual_ablation_apr2026
+# 2. Loss-form ablation (6 cells × 3 seeds, ~3 hr)
+python scripts/ablation.py --recipe loss_form \
+  --epochs 30 --seeds 42 123 456
 
-# Subsets allowed via --configs:
-python scripts/loss_ablation.py --configs mae_only --seeds 42
+# 3. Output-head / residual ablation (4 cells × 3 seeds, ~2 hr)
+python scripts/ablation.py --recipe residual_head \
+  --epochs 30 --seeds 42 123 456
+
+# 4. Combined-best (this report's follow-up, 3 cells × 3 seeds, ~1.5 hr)
+python scripts/ablation.py --recipe combined_best \
+  --epochs 30 --seeds 42 123 456
+
+# Subsets allowed via --cells:
+python scripts/ablation.py --recipe loss_form --cells mae_only --seeds 42
+
+# Bitwise-reproducible per-seed numbers (slower, requires no early stop):
+python scripts/ablation.py --recipe combined_best --deterministic --epochs 30
 ```
 
-CSVs land alongside each run dir; `result.json` per run has the full eval dict; `history.csv` has per-epoch losses.
+The unified runner is `scripts/ablation.py`; recipes (cells, defaults, overrides) live in `scripts/ablation_recipes.py`. CSVs land alongside each run dir; `result.json` per run has the full eval dict + the resolved arch/loss kwargs as JSON strings; `history.csv` has per-epoch losses.
+
+The first batch of ablations (committed before the refactor) used three near-duplicate scripts (`binned_weight_ablation.py`, `loss_ablation.py`, `residual_ablation.py`); those scripts have been removed in favor of the unified runner. The recorded outputs in `outputs/` are unchanged.
 
 ## Caveats
 
 1. **The two ablations are not factorial**, so we have 6+4 cells, not 6×4 = 24. The combined-best config — `bounded_no_bias` × `mae_only` × `xy_balance=0` — has not been measured. Hypothesis (loose): 31.5–32.5 GeV X IQR/2.
 2. **xy_balance=10 was on for the residual ablation** because it was launched before the loss ablation finished. Bounded weights are robust to this (33.70 even with xy=10), but the absolute residual numbers are pessimistic by ~1 GeV.
-3. **Three duplicate ablation scripts** (`binned_weight_ablation.py`, `loss_ablation.py`, `residual_ablation.py`) share ~80% of their code. Refactor into one configurable runner before the next ablation.
+3. ~~Three duplicate ablation scripts share ~80% of their code.~~ **Refactored**: replaced by `scripts/ablation.py` + `scripts/ablation_recipes.py`. The three earlier studies were rerun via the new runner for parity check (not required since outputs are deterministic w.r.t. code state).
 4. **Determinism**: see "Reproducibility" above. The conclusions are stable; specific numbers shift by ~0.3 GeV per seed across reruns.
