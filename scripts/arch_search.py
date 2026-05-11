@@ -71,6 +71,9 @@ class ArchConfig:
     embed_charge_dim: int = 2     # charge embedding output dim (vocab=4)
     with_bias: bool = False       # per-particle bias (b_ix, b_iy) correction
     weight_minus_one: bool = False # initialize weight at -1 (start from PF MET)
+    bounded_weight: bool = False  # tanh-bounded weight ∈ (-2, 0), init at -1.
+                                  # Mutually exclusive with weight_minus_one's
+                                  # ShiftByConstant path (they conflict).
     use_sum: bool = False         # use reduce_sum instead of GlobalAveragePooling1D
     use_2d_weights: bool = False  # separate w_x, w_y per particle (vs scalar w)
     learning_rate: float = 1e-3   # optimizer learning rate
@@ -206,6 +209,32 @@ class ShiftByConstant(tf.keras.layers.Layer):
         return config
 
 
+class BoundedWeight(tf.keras.layers.Layer):
+    """Map a raw Dense output to a bounded per-particle weight (in normalized
+    units). Default range gives effective weight ∈ (-2, 0) with init at -1
+    when raw=0 — matching the weight_minus_one convention so untrained model
+    output equals PUPPI MET.
+
+    effective_w = lo + (hi - lo) * (1 + tanh(raw)) / 2
+    stored_w    = effective_w / normfac
+
+    The "effective weight" is the multiplier on pxpy you'd see in the MET
+    sum after un-normalization. With lo=-2, hi=0 → range (-2, 0), init -1.
+    """
+    def __init__(self, lo=-2.0, hi=0.0, normfac=100.0, **kwargs):
+        super().__init__(**kwargs)
+        self.lo, self.hi, self.normfac = lo, hi, normfac
+
+    def call(self, x):
+        eff = self.lo + (self.hi - self.lo) * 0.5 * (1.0 + tf.tanh(x))
+        return eff / self.normfac
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({"lo": self.lo, "hi": self.hi, "normfac": self.normfac})
+        return config
+
+
 class SumOverParticles(tf.keras.layers.Layer):
     """Sum over the particle axis (axis=1). Drop-in replacement for
     GlobalAveragePooling1D that doesn't divide by N."""
@@ -294,19 +323,29 @@ def build_model(cfg: ArchConfig) -> Model:
                 out = GlobalAveragePooling1D(name="output")(weighted)
         else:
             # Per-particle scalar weight (original mode 1).
-            # When weight_minus_one is enabled, init weight Dense with zeros so the
-            # pre-shift output is exactly 0, giving a clean -shift starting point.
-            w_init = "zeros" if cfg.weight_minus_one else "lecun_uniform"
+            # weight_minus_one or bounded_weight init the weight near PUPPI MET
+            # baseline so the network only learns small corrections.
+            init_at_puppi = cfg.weight_minus_one or cfg.bounded_weight
+            w_init = "zeros" if init_at_puppi else "lecun_uniform"
             b_init = "zeros"
             w = Dense(1, activation="linear", name="met_weight",
                       kernel_initializer=w_init, bias_initializer=b_init)(x)  # (B, 128, 1)
 
-            # Weight-minus-one: shift so initial weight starts from PF MET baseline.
-            # With use_sum, output = sum(w * pxpy). Targets are in GeV/normfac.
-            # So shift = -1/normfac makes initial output ≈ PF_MET/normfac ≈ targets.
-            # Without use_sum (GAP), output = mean(w * pxpy), so shift = -N/normfac
-            # to compensate for the 1/N averaging.
-            if cfg.weight_minus_one:
+            if cfg.bounded_weight:
+                # Tanh-bounded effective weight ∈ (-2, 0), init at -1 (PUPPI MET).
+                # Prevents over-amplification (the bw=200 failure mode) and
+                # enforces "model can only rescale particle contributions",
+                # never flip their sign or grow them unboundedly.
+                if not cfg.use_sum:
+                    raise ValueError("bounded_weight currently requires use_sum=True")
+                w = BoundedWeight(lo=-2.0, hi=0.0, normfac=NORMFAC,
+                                  name="bounded_weight")(w)
+            elif cfg.weight_minus_one:
+                # Weight-minus-one shift: initial weight starts at PF MET baseline.
+                # With use_sum, output = sum(w * pxpy). Targets are in GeV/normfac.
+                # So shift = -1/normfac makes initial output ≈ PF_MET/normfac ≈ targets.
+                # Without use_sum (GAP), output = mean(w * pxpy), so shift = -N/normfac
+                # to compensate for the 1/N averaging.
                 if cfg.use_sum:
                     shift_val = -1.0 / NORMFAC
                 else:
@@ -318,7 +357,7 @@ def build_model(cfg: ArchConfig) -> Model:
 
             # Per-particle bias: additive momentum correction (b_ix, b_iy)
             if cfg.with_bias:
-                bias_k_init = "zeros" if cfg.weight_minus_one else "lecun_uniform"
+                bias_k_init = "zeros" if init_at_puppi else "lecun_uniform"
                 bias = Dense(2, activation="linear", name="met_bias",
                              kernel_initializer=bias_k_init, bias_initializer="zeros")(x)  # (B, 128, 2)
                 weighted = tf.keras.layers.Add(name="add_bias")([weighted, bias])

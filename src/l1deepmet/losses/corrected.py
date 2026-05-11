@@ -69,6 +69,8 @@ class CorrectedCompositeLoss(tf.keras.losses.Loss):
     def __init__(self,
                  mae_weight: float = 1.0,
                  mse_weight: float = 1.0,
+                 huber_weight: float = 0.0,
+                 huber_delta: float = 0.5,
                  binned_weight: float = 0.0,
                  phi_weight: float = 0.0,
                  xy_balance_weight: float = 0.0,
@@ -79,6 +81,8 @@ class CorrectedCompositeLoss(tf.keras.losses.Loss):
 
         self.mae_weight = mae_weight
         self.mse_weight = mse_weight
+        self.huber_weight = huber_weight
+        self.huber_delta = huber_delta
         self.binned_weight = binned_weight
         self.phi_weight = phi_weight
         self.xy_balance_weight = xy_balance_weight
@@ -86,6 +90,12 @@ class CorrectedCompositeLoss(tf.keras.losses.Loss):
 
         self.mae = tf.keras.losses.MeanAbsoluteError()
         self.mse = tf.keras.losses.MeanSquaredError()
+        # Huber: quadratic for |err| < delta, linear beyond. delta is in
+        # normalized target units (so 0.5 means 50 GeV with normfac=100).
+        # Keep robust to heavy tails while preserving smooth gradient near the
+        # optimum. Lazily constructed when used so it always reflects current
+        # huber_delta even if updated post-init.
+        self._huber = tf.keras.losses.Huber(delta=huber_delta)
 
 
     def call(self, y_true, y_pred):
@@ -94,6 +104,10 @@ class CorrectedCompositeLoss(tf.keras.losses.Loss):
 
         total_loss = (self.mae_weight * mae_loss +
                         self.mse_weight * mse_loss)
+
+        if self.huber_weight > 0:
+            huber_loss = tf.reduce_mean(self._huber(y_true, y_pred))
+            total_loss = total_loss + self.huber_weight * huber_loss
 
         # BinnedDeviation conflicts with resolution; only compute when explicitly enabled.
         if self.binned_weight > 0:
@@ -118,6 +132,8 @@ class CorrectedCompositeLoss(tf.keras.losses.Loss):
         config.update({
             "mae_weight": self.mae_weight,
             "mse_weight": self.mse_weight,
+            "huber_weight": self.huber_weight,
+            "huber_delta": self.huber_delta,
             "binned_weight": self.binned_weight,
             "phi_weight": self.phi_weight,
             "xy_balance_weight": self.xy_balance_weight,
