@@ -19,7 +19,8 @@ same physics performance as the simulator.
 | Build HGQ2 model with our architecture    | ✅ working  |
 | Forward pass                              | ✅ working  |
 | Training (``model.fit``)                  | ✅ working  |
-| hls4ml conversion                         | ❌ blocked — see "Known issues" |
+| hls4ml conversion (with embeddings)       | ✅ working  |
+| hls4ml conversion (no embeddings)         | ❌ blocked (parser topology issue) |
 | Integration with ``scripts/ablation.py``  | 🚧 pending  |
 | QKeras (alternative manual-bit-width QAT) | 🚧 not implemented |
 
@@ -62,33 +63,32 @@ with the standard HGQ2 custom-objects registration.
 | Normalization              | ``BatchNormalization``       | ``QBatchNormalization`` |
 | ReLU / tanh                | ``Activation('relu'/'tanh')``| ``QUnaryFunctionLUT(activations.relu / .tanh)`` |
 | Multiply (weight × pxpy)   | ``Multiply``                 | ``QMultiply``      |
-| Sum over particles         | custom ``SumOverParticles``  | ``QSum(axes=1)`` (native) |
+| Sum over particles         | custom ``SumOverParticles``  | ``QGlobalAveragePooling1D`` + ``QDense(2, kernel=N·I)`` (``QSum`` unsupported by hls4ml 1.3) |
 | Bounded weight head        | custom ``BoundedWeight``     | ``QUnaryFunctionLUT(tanh)`` + ``QDense(1)`` with fixed init |
 
 The HGQ2 model **does not need the** ``export_for_hls`` **rewrite step** — every
 layer is already an hls4ml-recognized quantized primitive, modulo the
 conversion bug below.
 
-## Known issues
+## Workarounds applied to make hls4ml conversion work
 
-1. **hls4ml conversion fails on shape broadcast.** Running
-   ``hls4ml.converters.convert_from_keras_model`` on a HGQ2 model with
-   per-particle shape (B, 128, K) raises ``InvalidArgumentError: Rank of
-   input (3) must be no greater than rank of output shape (2)`` from inside
-   HGQ2's ``FixedPointQuantizer.call`` during the parse step.
+hls4ml 1.3 has two compatibility gaps with HGQ2 layers; we route around both:
 
-   Diagnosis (preliminary): hls4ml's keras_v3_to_hls parser calls each layer
-   with a representative tensor; somewhere a (B, 128) tensor is being fed
-   into a layer that expected (B, 128, K), causing the quantizer's bit-width
-   broadcast to fail.
+1. **``QUnaryFunctionLUT`` triggers a rank mismatch.** The original
+   ``InvalidArgumentError: Rank of input (3) must be no greater than rank of
+   output shape (2)`` from inside ``FixedPointQuantizer.bw_to_x``. Use
+   ``hgq.layers.activation.Activation`` (aliased ``QActivation``) instead —
+   it doesn't go through that code path. Verified for both ReLU and tanh.
 
-   Needs investigation:
-   - whether HGQ2 expects a specific input shape policy from hls4ml's parser
-   - whether ``hls4ml >= 1.4`` (next release) fixes it
-   - whether explicit ``QuantizerConfig`` overrides (e.g. ``BitwidthMapper``)
-     give the parser the shape info it needs
+2. **``QSum`` is not in hls4ml's layer registry.** Raises ``Layer not found
+   in registry, and no fallback option succeeded``. Replace with
+   ``QGlobalAveragePooling1D`` + a fixed-weight ``QDense(2)`` with kernel
+   = N·I (mathematically identical for our zero-padded inputs).
 
-   Until this is resolved, the HGQ2 path is training-only.
+Both workarounds are regression-anchored in
+``tests/unit/synthesis/test_hgq2_to_hls.py``. If a future HGQ2 / hls4ml
+release fixes either upstream, the dedicated "still broken" tests will tell
+you and the workarounds can be removed.
 
 2. **No integration with ``scripts/ablation.py`` yet.** A new recipe key
    (``quantization: "hgq2" | "none"``) needs to be wired into

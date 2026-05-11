@@ -35,8 +35,26 @@ from keras.layers import Concatenate, Input  # type: ignore
 from keras.models import Model  # type: ignore
 
 # HGQ2 quantized layers.
+#
+# Two layer choices here exist to work around hls4ml-1.3 ↔ HGQ2-2.x
+# parser limitations:
+#
+#  1. ``hgq.layers.activation.Activation`` (aliased ``QActivation``) replaces
+#     ``QUnaryFunctionLUT``. The latter triggers a rank-mismatch in hls4ml's
+#     keras_v3 parser (quantizer's bit-width tensor rank 3 vs the input
+#     shape rank 2 the parser feeds it).
+#
+#  2. ``QGlobalAveragePooling1D`` + a fixed-weight ``QDense(2)`` with kernel =
+#     N · I replace ``QSum``. ``QSum`` isn't in hls4ml's layer registry
+#     (raises ``Layer not found in registry, and no fallback option
+#     succeeded``). The average-then-multiply-by-N trick is mathematically
+#     identical for our padded-with-zeros inputs and is QAT-friendly.
+#
+# Both regressions are anchored in ``tests/unit/synthesis/test_hgq2_to_hls.py``;
+# if HGQ2 or hls4ml fix these upstream, the test will tell you and the
+# workarounds can be reverted.
 from hgq.layers import (  # type: ignore
-    QAdd, QBatchNormalization, QDense, QMultiply, QSum, QUnaryFunctionLUT,
+    QAdd, QBatchNormalization, QDense, QGlobalAveragePooling1D, QMultiply,
 )
 from hgq.layers.activation import Activation as QActivation  # type: ignore
 from hgq.quantizer.config import QuantizerConfig  # type: ignore
@@ -153,6 +171,9 @@ def build_hgq2_model(
         # (a no-op) to features. The path is parameter-free at inference time
         # (the zero kernel makes it identical to skipping these inputs) but
         # keeps the graph topologically valid.
+        #
+        # Note: hls4ml's ``Add`` only supports 2 inputs at a time (same
+        # limitation as ``Concatenate``); chain two binary Adds.
         from keras.layers import Add  # local import
         pdg_dummy = QDense(
             5, use_bias=False, name="dummy_pdgid",
@@ -166,7 +187,8 @@ def build_hgq2_model(
             kq_conf=q, iq_conf=q,
             trainable=False,
         )(x_charge)
-        features = Add(name="features")([x_cont, pdg_dummy, chg_dummy])
+        cont_plus_pdg = Add(name="cont_plus_pdg")([x_cont, pdg_dummy])
+        features = Add(name="features")([cont_plus_pdg, chg_dummy])
 
     # ── Per-particle MLP body ─────────────────────────────────────────────────
     h = features
@@ -176,7 +198,7 @@ def build_hgq2_model(
             kq_conf=q, iq_conf=q, bq_conf=q,
         )(h)
         h = QBatchNormalization(name=f"qbn_{i}")(h)
-        h = QUnaryFunctionLUT(keras.activations.relu, name=f"qact_{i}")(h)
+        h = QActivation("relu", name=f"qact_{i}")(h)
 
     # ── Per-particle scalar weight head ───────────────────────────────────────
     raw_w = QDense(1, name="qmet_weight", kq_conf=q, iq_conf=q, bq_conf=q)(h)
@@ -187,7 +209,7 @@ def build_hgq2_model(
         # Implemented as: tanh activation, then a frozen-affine QDense.
         # Re-using QDense (trainable) is fine — the gradient will keep
         # kernel/bias near the target; alternatively the caller can freeze it.
-        w = QUnaryFunctionLUT(keras.activations.tanh, name="qtanh")(raw_w)
+        w = QActivation("tanh", name="qtanh")(raw_w)
         w = QDense(
             1, name="qbounded_scale",
             kernel_initializer=keras.initializers.Constant(1.0 / normfac),
@@ -209,10 +231,20 @@ def build_hgq2_model(
     # ── Multiply by pxpy and sum over particles ───────────────────────────────
     weighted = QMultiply(name="qweight_pxpy")([w, x_pxpy])  # (B, N, 2)
 
-    # QSum natively quantizes the accumulation. axes=1 sums over the particle
-    # axis (matches the original SumOverParticles). keepdims=False so output
-    # is (B, 2).
-    out = QSum(axes=1, keepdims=False, name="output")(weighted)
+    # Replace what was SumOverParticles in the full-precision builder with a
+    # QGlobalAveragePooling1D followed by a fixed-weight QDense(2) that
+    # multiplies by N. Padded slots have pxpy = 0 in our preprocessing so
+    # sum and mean*N agree exactly. ``QSum`` isn't recognized by hls4ml 1.3.
+    import numpy as np  # local import
+    pooled = QGlobalAveragePooling1D(name="qavg_over_particles")(weighted)  # (B, 2)
+    out = QDense(
+        2, use_bias=False, name="output",
+        kernel_initializer=keras.initializers.Constant(
+            (np.eye(2, dtype="float32") * float(n_particles)).tolist()
+        ),
+        trainable=False,
+        kq_conf=q, iq_conf=q,
+    )(pooled)
 
     model = Model(
         inputs=[x_cont, x_pxpy, x_pdgid, x_charge],
