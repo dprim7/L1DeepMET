@@ -26,7 +26,59 @@ DEFAULT_LOSS = dict(
 )
 
 
+# Best-known loss/head settings as of the combined-best ablation:
+BEST_LOSS = dict(DEFAULT_LOSS, mae_weight=1.0, mse_weight=0.0,
+                 xy_balance_weight=0.0)
+
+
 RECIPES = {
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Architecture sweep under the CORRECTED loss (mae_only, no xy_balance,
+    # no bias, binned_weight=0). The prior dense_architecture_baseline_apr2026
+    # report swept this but with binned_weight=200, so its rankings reflect
+    # a now-known-bad loss. This sweep regenerates the architecture landscape
+    # with the correct loss to confirm or refute the ~33.2 GeV "plateau"
+    # claim from the combined_best ablation.
+    "arch_sweep": {
+        "default_arch": SCALAR_BASE,
+        "default_loss": BEST_LOSS,
+        "cells": [
+            {"name": f"w{w}_d{d}", "arch": {"width": w, "depth": d}}
+            for w in [32, 64, 128, 256]
+            for d in [2, 3, 4]
+        ],
+    },
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Architecture family comparison at matched parameter count (~10k), same
+    # corrected loss (mae_only, no xy_balance, no bias). Three families:
+    #   - mlp        : DeepMET / Deep Sets (Dense + BN per layer, weight-shared)
+    #   - transformer: 2-head MHA encoder per arXiv:2402.01047 style;
+    #                  key_dim=6 keeps params near 10k
+    #   - smaller MLPs as a "less capacity, fewer LUTs" reference point
+    "arch_comparison": {
+        "default_arch": SCALAR_BASE,
+        "default_loss": BEST_LOSS,
+        "cells": [
+            # MLP / Deep Sets family
+            {"name": "mlp_w64_d3",   "arch": {"width": 64, "depth": 3, "body_type": "mlp"}},
+            {"name": "mlp_w32_d3",   "arch": {"width": 32, "depth": 3, "body_type": "mlp"}},
+            {"name": "mlp_w32_d4",   "arch": {"width": 32, "depth": 4, "body_type": "mlp"}},
+            # Transformer family — ~10k params at d=2 kd=6
+            {"name": "xformer_w64_d2_h2_kd6_ff8",
+             "arch": {"width": 64, "depth": 2, "body_type": "transformer",
+                      "num_heads": 2, "key_dim": 6, "ffn_dim": 8}},
+            {"name": "xformer_w64_d3_h2_kd6_ff8",
+             "arch": {"width": 64, "depth": 3, "body_type": "transformer",
+                      "num_heads": 2, "key_dim": 6, "ffn_dim": 8}},
+            # Bigger transformer for ceiling reference
+            {"name": "xformer_w64_d3_h2_kd16_ff16",
+             "arch": {"width": 64, "depth": 3, "body_type": "transformer",
+                      "num_heads": 2, "key_dim": 16, "ffn_dim": 16}},
+        ],
+    },
+
 
     # ─────────────────────────────────────────────────────────────────────────
     "binned_weight": {

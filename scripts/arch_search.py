@@ -35,12 +35,16 @@ tf.config.threading.set_inter_op_parallelism_threads(2)
 tf.config.threading.set_intra_op_parallelism_threads(4)
 from tensorflow.keras.layers import (  # type: ignore
     Activation,
+    Add,
     BatchNormalization,
     Concatenate,
     Dense,
+    Dropout,
     Embedding,
     GlobalAveragePooling1D,
     Input,
+    LayerNormalization,
+    MultiHeadAttention,
     Multiply,
 )
 from tensorflow.keras.models import Model  # type: ignore
@@ -81,6 +85,17 @@ class ArchConfig:
     warmup_epochs: int = 0        # linear warmup epochs before cosine decay
     phi_loss_weight: float = 0.0  # weight for phi-aware loss term (1-cos(dphi))
     xy_balance_weight: float = 0.0 # weight for X/Y symmetry loss (|MAE_x - MAE_y|)
+    body_type: str = "mlp"        # per-particle encoder family:
+                                  #   "mlp"          — Dense + BN per layer (DeepMET / Deep Sets default)
+                                  #   "transformer"  — MultiHeadAttention encoder blocks (arXiv:2402.01047 style)
+    num_heads: int = 2            # transformer only: attention heads
+    key_dim: int = 0              # transformer only: per-head Q/K/V projection dim.
+                                  # 0 → use width // num_heads (standard).
+                                  # Set small (e.g. 6) to fit L1 budget per
+                                  # arXiv:2402.01047 (their config is 2 heads,
+                                  # 3 blocks, d_model 64, key_dim ~6 to hit 9k).
+    ffn_dim: int = 16             # transformer only: FFN hidden dim (kept tiny per
+                                  # arXiv:2402.01047 to fit L1 latency / params)
 
 
 def generate_search_configs() -> List[ArchConfig]:
@@ -209,6 +224,30 @@ class ShiftByConstant(tf.keras.layers.Layer):
         return config
 
 
+class PaddingMask(tf.keras.layers.Layer):
+    """Build a (B, 1, N) attention mask from a (B, N) pdgid tensor.
+
+    Mask is True where pdgid != 0 (real particles); False on padding slots.
+    Adds an identity-diagonal OR so no row is fully masked (which would
+    NaN MHA). Output shape (B, 1, N) broadcasts across queries in MHA.
+    """
+    def __init__(self, n_particles: int, **kwargs):
+        super().__init__(**kwargs)
+        self.n_particles = n_particles
+
+    def call(self, pdgid):
+        valid = tf.not_equal(tf.cast(pdgid, tf.int32), 0)        # (B, N) bool
+        attn_mask = valid[:, None, :]                            # (B, 1, N)
+        # Identity-diagonal fallback so every query attends to at least itself.
+        self_mask = tf.eye(self.n_particles, dtype=tf.bool)[None, :, :]  # (1, N, N)
+        return tf.logical_or(attn_mask, self_mask)
+
+    def get_config(self):
+        config = super().get_config()
+        config["n_particles"] = self.n_particles
+        return config
+
+
 class BoundedWeight(tf.keras.layers.Layer):
     """Map a raw Dense output to a bounded per-particle weight (in normalized
     units). Default range gives effective weight ∈ (-2, 0) with init at -1
@@ -277,17 +316,55 @@ def build_model(cfg: ArchConfig) -> Model:
     else:
         features = x_cont  # (B, 128, 5)
 
-    # --- Dense body ---
+    # --- Per-particle encoder body ---
     x = features
-    for i in range(cfg.depth):
-        x = Dense(
-            cfg.width,
-            activation=None,
-            kernel_initializer="lecun_uniform",
-            name=f"dense_{i}",
-        )(x)
-        x = BatchNormalization(momentum=0.95, name=f"bn_{i}")(x)
-        x = Activation(cfg.activation, name=f"act_{i}")(x)
+    if cfg.body_type == "mlp":
+        # DeepMET / Deep Sets: per-particle Dense + BN + activation stacked.
+        # Same Dense kernels are applied to every particle (weight sharing
+        # across the 128 particle slots).
+        for i in range(cfg.depth):
+            x = Dense(
+                cfg.width,
+                activation=None,
+                kernel_initializer="lecun_uniform",
+                name=f"dense_{i}",
+            )(x)
+            x = BatchNormalization(momentum=0.95, name=f"bn_{i}")(x)
+            x = Activation(cfg.activation, name=f"act_{i}")(x)
+    elif cfg.body_type == "transformer":
+        # Transformer encoder à la arXiv:2402.01047. Pre-LayerNorm formulation
+        # with residual connections. Padding particles (pdgid==0) are masked
+        # out of attention so they don't pollute representations of real
+        # particles. The mode-1 output head still produces a per-particle
+        # weight and sums weighted momenta — same physics output as the MLP
+        # body, just a richer per-particle encoder.
+        # First project input features to model dim (cfg.width).
+        x = Dense(cfg.width, activation=None,
+                  kernel_initializer="lecun_uniform",
+                  name="input_proj")(x)
+        # Build attention mask from pdgid==0 padding (broadcasts over query axis).
+        attn_mask = PaddingMask(n_particles=N_PARTICLES, name="padding_mask")(x_pdgid)
+        kd = cfg.key_dim if cfg.key_dim > 0 else (cfg.width // cfg.num_heads)
+        for i in range(cfg.depth):
+            # Pre-LN MHA block: x = x + MHA(LN(x))
+            xn = LayerNormalization(name=f"ln_attn_{i}")(x)
+            attn = MultiHeadAttention(
+                num_heads=cfg.num_heads,
+                key_dim=kd,
+                name=f"mha_{i}",
+            )(xn, xn, attention_mask=attn_mask)
+            x = Add(name=f"add_attn_{i}")([x, attn])
+            # Pre-LN FFN block: x = x + FFN(LN(x)). FFN kept tiny (ffn_dim
+            # 16-32) per arXiv:2402.01047 to fit L1 budget.
+            xn = LayerNormalization(name=f"ln_ffn_{i}")(x)
+            ff = Dense(cfg.ffn_dim, activation=cfg.activation,
+                       name=f"ffn_in_{i}")(xn)
+            ff = Dense(cfg.width, activation=None,
+                       name=f"ffn_out_{i}")(ff)
+            x = Add(name=f"add_ffn_{i}")([x, ff])
+    else:
+        raise ValueError(f"Unknown body_type: {cfg.body_type!r}. "
+                         f"Expected 'mlp' or 'transformer'.")
 
     # --- Output head ---
     if cfg.mode == 1:
