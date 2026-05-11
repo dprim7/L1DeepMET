@@ -2,6 +2,8 @@
 
 **Date.** May 2026. Branch: `claude/great-ishizaka`. Latest commit at time of writing: `154fd3b`.
 
+> **Metric fix note (May 2026).** The `met_pt_resolution` numbers in this report were produced with the original mean-of-ratios response correction in `physics.py`; that convention was later replaced by ratio-of-means (matching `src/l1deepmet/plotting.py` and the L1METML legacy convention). See `reports/METRIC_FIX_addendum.md` for details. Under the corrected metric, every pT IQR/2 shifts by ~+0.3 GeV uniformly (e.g. PUPPI 44.33 → 44.55; best ML 41.60 → 41.93). The Δ_pT column moves by ≤0.15 GeV in either direction; rankings are preserved; all qualitative conclusions hold. X/Y, φ, AUC unchanged.
+
 ## TL;DR
 
 Starting from a model that was *worse than PUPPI MET* (42.78 GeV X IQR/2 vs PUPPI's 38.30), three diagnostic ablations and one combined-best run have produced the strongest Dense baseline in the project so far:
@@ -10,9 +12,11 @@ Starting from a model that was *worse than PUPPI MET* (42.78 GeV X IQR/2 vs PUPP
 |---|---:|---:|---:|
 | X resolution (IQR/2) | 38.30 GeV | **33.17 GeV** | −5.13 (−13%) |
 | Y resolution (IQR/2) | 38.38 GeV | **33.00 GeV** | −5.38 (−14%) |
-| pT resolution, response-corr. | 44.33 GeV | **41.60 GeV** | −2.73 (−6%) |
+| pT resolution, response-corr. † | 44.33 GeV | **41.60 GeV** | −2.73 (−6%) |
 | φ resolution | 1.166 rad | **1.112 rad** | −0.054 (−5%) |
 | ROC-AUC (gen > 200 vs gen < 50) | 0.9741 | **0.9777** | +0.0036 |
+
+† Under the corrected (ratio-of-means) metric: PUPPI 44.55 GeV, best ML 41.93 GeV, Δ = −2.62 GeV.
 | Parameters | 0 | 9,953 | — |
 
 All ML configs that reach this level share three features: `binned_weight=0`, `xy_balance_weight=0`, and `with_bias=False`. The choice between MAE / MSE / Huber and between bounded / unbounded scalar weight is within seed noise once those three are right. The architecture itself (w64 d3 mode-1 with embeddings + weight_minus_one or bounded) is at a clean plateau.

@@ -1,5 +1,7 @@
 # Loss-form & output-head ablations (May 2026)
 
+> **Metric fix note (May 2026).** `met_pt_resolution` numbers below used the original mean-of-ratios response correction; later replaced by ratio-of-means. See `reports/METRIC_FIX_addendum.md`. All pT numbers shift +0.2–0.4 GeV uniformly under the corrected metric; rankings and qualitative conclusions hold. X/Y, φ, AUC are unaffected.
+
 **Context.** Sequel to `reports/loss_diagnosis_apr2026/` (which removed `BinnedDeviation` from the default loss, taking X resolution from 42.78 → 34.86 GeV IQR/2). With the broken loss term gone, this study sweeps two orthogonal axes — the *form* of the regression loss, and the *parameterization* of the per-particle weight head — to find what else was tuned wrong.
 
 ## Headline result

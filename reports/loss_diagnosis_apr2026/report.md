@@ -4,6 +4,8 @@
 **Status**: 🚨 Major correction to all prior conclusions in this project.
 **Outcome**: Removing `BinnedDeviation` from the training loss improves X resolution from 42.78 → 34.86 GeV (a 7.9 GeV jump), beating every prior published result.
 
+> **Metric fix note (May 2026, post-dated).** This report's primary metric is X IQR/2, which is unaffected by the response-correction convention. The two pT-resolution numbers it references (PUPPI 44.33, ML matched) use the original mean-of-ratios response correction; under the corrected ratio-of-means convention these become 44.55 and remain matched. See `reports/METRIC_FIX_addendum.md`. No conclusions change.
+
 ## TL;DR
 
 Every previous experiment in this project (`dense_architecture_baseline_apr2026`, `deepmet_fixes_ablation_apr2026`, `resolution_gap_study_apr2026`) was tuning a model whose loss function was actively pulling it away from a known-good solution toward a worse one. After removing one term:

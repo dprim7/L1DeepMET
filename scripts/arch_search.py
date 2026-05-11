@@ -188,12 +188,14 @@ PDGID_VOCAB = 6   # 0=invalid, 1-5 = particle types
 CHARGE_VOCAB = 4   # 0=invalid, 1=neg, 2=neutral, 3=pos
 
 
+@tf.keras.utils.register_keras_serializable(package="l1deepmet")
 class CastToInt(tf.keras.layers.Layer):
     """Cast input to int32 — Keras 3 compatible."""
     def call(self, x):
         return tf.cast(x, tf.int32)
 
 
+@tf.keras.utils.register_keras_serializable(package="l1deepmet")
 class ZeroReduce(tf.keras.layers.Layer):
     """Reduce input to zeros of shape (B, dim) — dummy connection for unused inputs."""
     def __init__(self, output_dim=2, **kwargs):
@@ -210,6 +212,7 @@ class ZeroReduce(tf.keras.layers.Layer):
         return config
 
 
+@tf.keras.utils.register_keras_serializable(package="l1deepmet")
 class ShiftByConstant(tf.keras.layers.Layer):
     """Add a fixed constant to input. Used for weight-minus-one trick.
 
@@ -231,6 +234,7 @@ class ShiftByConstant(tf.keras.layers.Layer):
         return config
 
 
+@tf.keras.utils.register_keras_serializable(package="l1deepmet")
 class PaddingMask(tf.keras.layers.Layer):
     """Build a (B, 1, N) attention mask from a (B, N) pdgid tensor.
 
@@ -255,6 +259,7 @@ class PaddingMask(tf.keras.layers.Layer):
         return config
 
 
+@tf.keras.utils.register_keras_serializable(package="l1deepmet")
 class BoundedWeight(tf.keras.layers.Layer):
     """Map a raw Dense output to a bounded per-particle weight (in normalized
     units). Default range gives effective weight ∈ (-2, 0) with init at -1
@@ -281,6 +286,7 @@ class BoundedWeight(tf.keras.layers.Layer):
         return config
 
 
+@tf.keras.utils.register_keras_serializable(package="l1deepmet")
 class SumOverParticles(tf.keras.layers.Layer):
     """Sum over the particle axis (axis=1). Drop-in replacement for
     GlobalAveragePooling1D that doesn't divide by N."""

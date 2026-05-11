@@ -53,23 +53,46 @@ def compute_resolution_metrics(
 ) -> Dict[str, float]:
     """Resolution + response per pT bin + phi resolution.
 
-    Returns the same keys as the prior ``compute_metrics`` in evaluate.py
-    so downstream CSVs and plot scripts continue to work.
+    Response convention is **ratio of means** per truth-pT bin:
+        ``response = mean(pt_reco) / mean(pt_gen)``
+    This matches ``src/l1deepmet/plotting.py`` and the L1METML legacy
+    convention. It also has the nice property that the response correction
+    ``pt_corrected = pt_reco / response`` produces
+    ``mean(pt_corrected) = mean(pt_gen)`` exactly per bin, by construction,
+    so any residual ``pt_corrected − pt_gen`` is mean-zero in the bin and
+    its IQR/2 is a clean resolution.
+
+    Earlier versions used **mean of ratios** (``mean(pt_reco / pt_gen)``),
+    which is a different quantity — it coincides with the ratio of means
+    only when reco scales linearly with gen, and it can blow up at low
+    gen_pt due to per-event division. Reports before this change used the
+    mean-of-ratios variant; absolute pT resolution numbers shifted slightly
+    upon switching but qualitative conclusions (BinnedDeviation harm,
+    MLP plateau, transformer over-shrinkage) held.
     """
     gen_pt_phi = convert_xy_to_pt_phi(gen_xy)
     reco_pt_phi = convert_xy_to_pt_phi(reco_xy)
     gen_pt, gen_phi = gen_pt_phi[:, 0], gen_pt_phi[:, 1]
     reco_pt, reco_phi = reco_pt_phi[:, 0], reco_pt_phi[:, 1]
 
-    # Per-bin response.
+    # Per-bin response = mean(reco) / mean(gen).  (Ratio of means.)
+    # Distinct from mean(reco/gen), which we previously used by mistake.
     responses = []
     for lo, hi in zip(pt_bins[:-1], pt_bins[1:]):
         mask = (gen_pt >= lo) & (gen_pt < hi)
         n = int(mask.sum())
-        resp = float(np.mean(reco_pt[mask] / gen_pt[mask])) if n > 10 else 1.0
+        if n > 10:
+            mean_gen = float(np.mean(gen_pt[mask]))
+            if mean_gen > 1e-3:
+                resp = float(np.mean(reco_pt[mask])) / mean_gen
+            else:
+                resp = 1.0
+        else:
+            resp = 1.0
         responses.append((lo, hi, resp, n))
 
     # Apply response correction to reco_pt for the resolution computation.
+    # mean(pt_reco / resp) == mean(pt_gen) per bin, so residuals are zero-mean.
     high_pt_mask = gen_pt >= pt_bins[0]
     reco_pt_corrected = np.copy(reco_pt)
     for lo, hi, resp, _ in responses:
