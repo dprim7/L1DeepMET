@@ -31,10 +31,9 @@ from arch_search import ArchConfig, build_model, NORMFAC
 from l1deepmet.data.loader import H5DataLoader, split_preprocessed_features
 from l1deepmet.losses.corrected import CorrectedCompositeLoss
 from l1deepmet.metrics.binned import BinnedDeviation
-
-
-def resolqt(y):
-    return (np.percentile(y, 84) - np.percentile(y, 16)) / 2.0
+from l1deepmet.metrics.physics import (
+    compute_puppi_baseline, full_physics_card, resolqt,
+)
 
 
 # ─── ArchConfig + Loss kwargs ────────────────────────────────────────────────
@@ -65,26 +64,23 @@ def make_loss(kwargs: dict, normfac: float) -> CorrectedCompositeLoss:
 
 
 def evaluate_model(model, X, Y) -> dict:
+    """Full physics-card eval: resolution + per-bin response + phi + AUC,
+    plus comparisons to the PUPPI baseline. All scalars, JSON-safe.
+
+    Returned keys include (from src/l1deepmet/metrics/physics.py):
+      Resolution:  met_pt_resolution, met_x_resolution, met_y_resolution
+      Response:    mean_response, response_50_100, response_100_200, ...
+      Angular:     phi_resolution
+      Trigger:     auc, n_signal, n_background
+      vs PUPPI:    puppi_* (same set), delta_* (model − PUPPI for resolutions
+                   and angular; model − puppi for auc), mean_pred_pt_over_puppi_pt
+    """
     inputs, pxpy, pdg, charge = split_preprocessed_features(X)
     mi = {"continuous_inputs": inputs, "momentum_inputs": pxpy,
           "pdgid_inputs": pdg, "charge_inputs": charge}
-    pred = model.predict(mi, batch_size=512, verbose=0) * NORMFAC
-    gen_x, gen_y = Y[:, 0], Y[:, 1]
-    puppi_x = -X[:, :, 5].sum(axis=1)
-    puppi_y = -X[:, :, 6].sum(axis=1)
-    pred_pt = np.sqrt(pred[:, 0] ** 2 + pred[:, 1] ** 2)
-    puppi_pt = np.sqrt(puppi_x ** 2 + puppi_y ** 2) + 1e-3
-    return {
-        "model_iqr_x": float(resolqt(pred[:, 0] - gen_x)),
-        "model_iqr_y": float(resolqt(pred[:, 1] - gen_y)),
-        "model_std_x": float(np.std(pred[:, 0] - gen_x)),
-        "model_std_y": float(np.std(pred[:, 1] - gen_y)),
-        "puppi_iqr_x": float(resolqt(puppi_x - gen_x)),
-        "puppi_iqr_y": float(resolqt(puppi_y - gen_y)),
-        "delta_vs_puppi_x": float(resolqt(pred[:, 0] - gen_x) - resolqt(puppi_x - gen_x)),
-        "delta_vs_puppi_y": float(resolqt(pred[:, 1] - gen_y) - resolqt(puppi_y - gen_y)),
-        "mean_pred_pt_over_puppi_pt": float((pred_pt / puppi_pt).mean()),
-    }
+    pred_xy = model.predict(mi, batch_size=512, verbose=0) * NORMFAC
+    puppi_xy = compute_puppi_baseline(X)
+    return full_physics_card(gen_xy=Y, reco_xy=pred_xy, puppi_xy=puppi_xy)
 
 
 def train_one(cell: dict, recipe: dict, seed: int,
@@ -109,7 +105,10 @@ def train_one(cell: dict, recipe: dict, seed: int,
     arch_cfg = make_arch_cfg(name, arch_kwargs)
     model = build_model(arch_cfg)
     init_eval = evaluate_model(model, X_test, Y_test)
-    print(f"  [init] X={init_eval['model_iqr_x']:.2f} Y={init_eval['model_iqr_y']:.2f}",
+    print(f"  [init] X={init_eval['met_x_resolution']:.2f} "
+          f"Y={init_eval['met_y_resolution']:.2f}  "
+          f"pT={init_eval['met_pt_resolution']:.2f}  "
+          f"AUC={init_eval['auc']:.4f}",
           flush=True)
 
     loss = make_loss(loss_kwargs, normfac=NORMFAC)
@@ -139,10 +138,14 @@ def train_one(cell: dict, recipe: dict, seed: int,
     final_eval = evaluate_model(model, X_test, Y_test)
     val_loss = float(min(history.history["val_loss"]))
     n_ep = len(history.history["val_loss"])
-    print(f"  [final, {n_ep}ep, {elapsed:.0f}s] X={final_eval['model_iqr_x']:.2f} "
-          f"Y={final_eval['model_iqr_y']:.2f}  Δvs PUPPI = "
-          f"{final_eval['delta_vs_puppi_x']:+.2f}/{final_eval['delta_vs_puppi_y']:+.2f}  "
-          f"scale={final_eval['mean_pred_pt_over_puppi_pt']:.3f}", flush=True)
+    print(f"  [final, {n_ep}ep, {elapsed:.0f}s] "
+          f"X={final_eval['met_x_resolution']:.2f} "
+          f"Y={final_eval['met_y_resolution']:.2f}  "
+          f"pT={final_eval['met_pt_resolution']:.2f}  "
+          f"AUC={final_eval['auc']:.4f}  "
+          f"Δ_pT={final_eval.get('delta_met_pt_resolution', float('nan')):+.2f} "
+          f"Δ_AUC={final_eval.get('delta_auc', float('nan')):+.4f}",
+          flush=True)
 
     model.save(os.path.join(run_dir, "best_model.keras"))
 
@@ -153,8 +156,10 @@ def train_one(cell: dict, recipe: dict, seed: int,
         "n_params": model.count_params(),
         "epochs_trained": n_ep, "train_time_s": elapsed,
         "best_val_loss": val_loss,
-        "init_iqr_x": init_eval["model_iqr_x"],
-        "init_iqr_y": init_eval["model_iqr_y"],
+        "init_met_x_resolution": init_eval["met_x_resolution"],
+        "init_met_y_resolution": init_eval["met_y_resolution"],
+        "init_met_pt_resolution": init_eval["met_pt_resolution"],
+        "init_auc": init_eval["auc"],
         **{f"final_{k}": v for k, v in final_eval.items()},
     }
     with open(os.path.join(run_dir, "result.json"), "w") as f:
@@ -238,28 +243,43 @@ def main():
                 w = csv.DictWriter(f, fieldnames=fieldnames)
                 w.writerow({k: r.get(k, "") for k in fieldnames})
 
-    print("\n" + "=" * 100, flush=True)
+    print("\n" + "=" * 110, flush=True)
     print(f"SUMMARY: {args.recipe}", flush=True)
-    print("=" * 100, flush=True)
-    print(f"{'config':<25} {'X IQR/2':>14} {'Y IQR/2':>14} "
-          f"{'Δ vs PUPPI X':>14} {'Δ Y':>10} {'pred/PUPPI':>12} {'#params':>8}",
-          flush=True)
-    print("-" * 100, flush=True)
-    print(f"{'PUPPI MET (ref)':<25} {'38.30':>14} {'38.38':>14} "
-          f"{'+0.00':>14} {'+0.00':>10} {'1.000':>12} {'0':>8}", flush=True)
+    print("=" * 110, flush=True)
+    print(f"{'config':<22} {'X IQR/2':>12} {'Y IQR/2':>12} "
+          f"{'pT IQR/2':>12} {'φ res':>10} {'AUC':>10} {'Δ_pT':>10} "
+          f"{'Δ_AUC':>10} {'#par':>7}", flush=True)
+    print("-" * 110, flush=True)
+    if results:
+        # PUPPI reference (same across runs)
+        first = results[0]
+        print(f"{'PUPPI MET (ref)':<22} "
+              f"{first.get('final_puppi_met_x_resolution', 38.30):>12.2f} "
+              f"{first.get('final_puppi_met_y_resolution', 38.38):>12.2f} "
+              f"{first.get('final_puppi_met_pt_resolution', float('nan')):>12.2f} "
+              f"{first.get('final_puppi_phi_resolution', float('nan')):>10.4f} "
+              f"{first.get('final_puppi_auc', float('nan')):>10.4f} "
+              f"{0.0:>+10.2f} {0.0:>+10.4f} {'0':>7}",
+              flush=True)
     for cell in cells_to_run:
         rs = [r for r in results if r["config"] == cell["name"]]
         if not rs: continue
-        xm = np.mean([r["final_model_iqr_x"] for r in rs])
-        xs = np.std([r["final_model_iqr_x"] for r in rs])
-        ym = np.mean([r["final_model_iqr_y"] for r in rs])
-        ys = np.std([r["final_model_iqr_y"] for r in rs])
-        dx = np.mean([r["final_delta_vs_puppi_x"] for r in rs])
-        dy = np.mean([r["final_delta_vs_puppi_y"] for r in rs])
-        scale = np.mean([r["final_mean_pred_pt_over_puppi_pt"] for r in rs])
+        def m(k):
+            vals = [r.get(f"final_{k}", float("nan")) for r in rs]
+            return np.mean(vals), np.std(vals)
+        xm, xs = m("met_x_resolution")
+        ym, ys = m("met_y_resolution")
+        pm, ps = m("met_pt_resolution")
+        phm, _ = m("phi_resolution")
+        am, _ = m("auc")
+        dp, _ = m("delta_met_pt_resolution")
+        da, _ = m("delta_auc")
         nparam = rs[0]["n_params"]
-        print(f"{cell['name']:<25} {xm:>6.2f}±{xs:.2f}{'':<3} {ym:>6.2f}±{ys:.2f}{'':<3} "
-              f"{dx:>+14.2f} {dy:>+10.2f} {scale:>12.3f} {nparam:>8}", flush=True)
+        print(f"{cell['name']:<22} "
+              f"{xm:>6.2f}±{xs:.2f} {ym:>6.2f}±{ys:.2f} "
+              f"{pm:>6.2f}±{ps:.2f} "
+              f"{phm:>10.4f} {am:>10.4f} {dp:>+10.2f} {da:>+10.4f} "
+              f"{nparam:>7}", flush=True)
 
     print(f"\nSaved {len(results)} results to {csv_path}", flush=True)
 
