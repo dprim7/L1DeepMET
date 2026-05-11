@@ -147,7 +147,26 @@ def build_hgq2_model(
         cont_plus_pdgid = Concatenate(name="concat_cont_pdgid")([x_cont, emb_pdgid])
         features = Concatenate(name="concat_features")([cont_plus_pdgid, emb_charge])
     else:
-        features = x_cont
+        # Categorical inputs are unused, but Keras requires every declared
+        # Input to be connected to an output. Multiply by zero via a fixed
+        # QDense(use_bias=False) with weights initialized to zero, then add
+        # (a no-op) to features. The path is parameter-free at inference time
+        # (the zero kernel makes it identical to skipping these inputs) but
+        # keeps the graph topologically valid.
+        from keras.layers import Add  # local import
+        pdg_dummy = QDense(
+            5, use_bias=False, name="dummy_pdgid",
+            kernel_initializer="zeros",
+            kq_conf=q, iq_conf=q,
+            trainable=False,
+        )(x_pdgid)
+        chg_dummy = QDense(
+            5, use_bias=False, name="dummy_charge",
+            kernel_initializer="zeros",
+            kq_conf=q, iq_conf=q,
+            trainable=False,
+        )(x_charge)
+        features = Add(name="features")([x_cont, pdg_dummy, chg_dummy])
 
     # ── Per-particle MLP body ─────────────────────────────────────────────────
     h = features
