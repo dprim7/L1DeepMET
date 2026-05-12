@@ -51,6 +51,87 @@ RECIPES = {
     },
 
     # ─────────────────────────────────────────────────────────────────────────
+    # Transformer loss × head sweep. The arch_comparison_recon showed the
+    # transformer over-shrinks: X/Y IQR/2 looks great (≈30 GeV) but pT
+    # IQR/2 degrades by ~12 GeV vs PUPPI and AUC drops to PUPPI. The recon
+    # used MAE loss with weight_minus_one init.
+    #
+    # Hypothesis: the over-shrinkage comes from the loss having a degenerate
+    # "predict the median" optimum, not from architecture per se. Two
+    # orthogonal interventions to test:
+    #   - Loss: MAE (median-seeking, prone to shrinkage on zero-mean targets)
+    #     vs MSE (mean-seeking, optimum is the conditional mean — much harder
+    #     to satisfy by collapse).
+    #   - Head: weight_minus_one (unbounded scalar weight × pxpy, free to
+    #     shrink toward 0) vs bounded_weight (effective weight ∈ [-2, 0],
+    #     model can't easily collapse contributions).
+    #
+    # 4 cells × 3 seeds. All same transformer body (w64 d2 h2 kd6 ff8,
+    # ~9.9k params) so this is loss/head only.
+    #
+    # NOTE: an earlier attempt added a response-regularisation loss term to
+    # fix this. We rejected it — the mean-drift hinge is structurally the
+    # same instrument as BinnedDeviation (which we removed for hurting
+    # resolution); at the parameters that would matter it would pull the
+    # MLP off its 0.7 Wiener response toward 1.0 and lose ~1 GeV of X/Y.
+    # See git history for the reverted commit.
+    "transformer_loss_head": {
+        "default_arch": dict(SCALAR_BASE, width=64, depth=2, mode=1,
+                             use_sum=True,
+                             body_type="transformer",
+                             num_heads=2, key_dim=6, ffn_dim=8),
+        "default_loss": DEFAULT_LOSS,  # MAE+MSE both 1.0 default
+        "cells": [
+            # MAE only + weight_minus_one — reproduces the over-shrinkage
+            # baseline from the recon.
+            {"name": "xformer_mae_wmo",
+             "arch": {"weight_minus_one": True, "bounded_weight": False},
+             "loss": {"mae_weight": 1.0, "mse_weight": 0.0}},
+            # MSE only + weight_minus_one — does mean-seeking loss fix it?
+            {"name": "xformer_mse_wmo",
+             "arch": {"weight_minus_one": True, "bounded_weight": False},
+             "loss": {"mae_weight": 0.0, "mse_weight": 1.0}},
+            # MAE only + bounded weight — does architectural constraint fix it?
+            {"name": "xformer_mae_bounded",
+             "arch": {"weight_minus_one": False, "bounded_weight": True},
+             "loss": {"mae_weight": 1.0, "mse_weight": 0.0}},
+            # MSE only + bounded weight — both interventions combined.
+            {"name": "xformer_mse_bounded",
+             "arch": {"weight_minus_one": False, "bounded_weight": True},
+             "loss": {"mae_weight": 0.0, "mse_weight": 1.0}},
+        ],
+    },
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Deep Sets with explicit ρ head (the CMS L1 jet-tagger structure,
+    # arXiv:2509.24371): per-particle φ MLP → sum → ρ MLP → output.
+    # mode=0 picks the post-aggregation Dense path; rho_depth > 0 turns the
+    # default Dense(2) head into a proper ρ MLP. Compared against the current
+    # mode-1 "scalar weight × pxpy → sum" head on equal terms.
+    "deepsets_rho": {
+        "default_arch": dict(SCALAR_BASE, mode=0, use_sum=True,
+                             weight_minus_one=False, bounded_weight=False,
+                             with_bias=False),
+        "default_loss": BEST_LOSS,
+        "cells": [
+            # Baseline: mode=0 with no ρ head (= current mode-0 with sum pool).
+            {"name": "deepsets_rho0",            "arch": {"width": 64, "depth": 3, "rho_depth": 0}},
+            # 1-layer ρ head, ρ_width matching φ.
+            {"name": "deepsets_rho1_w64_d3",     "arch": {"width": 64, "depth": 3, "rho_depth": 1, "rho_width": 64}},
+            # 2-layer ρ head.
+            {"name": "deepsets_rho2_w64_d3",     "arch": {"width": 64, "depth": 3, "rho_depth": 2, "rho_width": 64}},
+            # Slimmer φ + slimmer ρ (closer to CMS L1 jet-tagger sizing).
+            {"name": "deepsets_rho2_w32_d3",     "arch": {"width": 32, "depth": 3, "rho_depth": 2, "rho_width": 32}},
+            # Reference: current production mode-1 head with the same φ body
+            # (re-runs from existing combined_best winner for parity).
+            {"name": "mode1_w64_d3_ref",
+             "arch": dict(SCALAR_BASE, width=64, depth=3, mode=1,
+                          weight_minus_one=True, use_sum=True),
+             "loss": BEST_LOSS},
+        ],
+    },
+
+    # ─────────────────────────────────────────────────────────────────────────
     # Architecture family comparison at matched parameter count (~10k), same
     # corrected loss (mae_only, no xy_balance, no bias). Three families:
     #   - mlp        : DeepMET / Deep Sets (Dense + BN per layer, weight-shared)
