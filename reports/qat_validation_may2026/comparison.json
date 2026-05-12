@@ -1,0 +1,665 @@
+{
+  "config": {
+    "width": 64,
+    "depth": 3,
+    "epochs": 30,
+    "seed": 42,
+    "n_validation_events": 500,
+    "data_dir": "/home/users/dprimosc/L1DeepMET/preprocessed/25Jul8_140X_v0"
+  },
+  "fp32": {
+    "keras_card": {
+      "met_pt_resolution": 40.5890007019043,
+      "met_x_resolution": 31.587821960449205,
+      "met_y_resolution": 32.49705139160156,
+      "mean_response": 0.6299290259679159,
+      "phi_resolution": 1.0955408859252929,
+      "response_50_100": 0.679716944694519,
+      "response_100_200": 0.5337551236152649,
+      "response_200_300": 0.6763150095939636,
+      "response_300_400": 1.0,
+      "response_400_inf": 1.0,
+      "auc": 0.9801703163017033,
+      "n_signal": 15,
+      "n_background": 274,
+      "puppi_met_pt_resolution": 44.39435577392578,
+      "puppi_met_x_resolution": 39.1902970123291,
+      "puppi_met_y_resolution": 37.60923034667969,
+      "puppi_mean_response": 0.887276271979014,
+      "puppi_phi_resolution": 1.1047804105281822,
+      "puppi_response_50_100": 0.9327691793441772,
+      "puppi_response_100_200": 0.7621676325798035,
+      "puppi_response_200_300": 0.9668920040130615,
+      "puppi_response_300_400": 1.0,
+      "puppi_response_400_inf": 1.0,
+      "puppi_auc": 0.9534063260340632,
+      "puppi_n_signal": 15,
+      "puppi_n_background": 274,
+      "delta_met_pt_resolution": -3.8053550720214844,
+      "delta_met_x_resolution": -7.6024750518798925,
+      "delta_met_y_resolution": -5.112178955078129,
+      "delta_phi_resolution": -0.009239524602889349,
+      "delta_auc": 0.026763990267640092,
+      "mean_pred_pt_over_puppi_pt": 0.757020115852356
+    },
+    "hls_card": {
+      "met_pt_resolution": 83.45598602294922,
+      "met_x_resolution": 52.45081260681152,
+      "met_y_resolution": 53.987274246215804,
+      "mean_response": 0.42481494943300885,
+      "phi_resolution": 1.759638977050781,
+      "response_50_100": 0.5091913342475891,
+      "response_100_200": 0.2939297556877136,
+      "response_200_300": 0.47132375836372375,
+      "response_300_400": 1.0,
+      "response_400_inf": 1.0,
+      "auc": 0.6562043795620438,
+      "n_signal": 15,
+      "n_background": 274,
+      "puppi_met_pt_resolution": 44.39435577392578,
+      "puppi_met_x_resolution": 39.1902970123291,
+      "puppi_met_y_resolution": 37.60923034667969,
+      "puppi_mean_response": 0.887276271979014,
+      "puppi_phi_resolution": 1.1047804105281822,
+      "puppi_response_50_100": 0.9327691793441772,
+      "puppi_response_100_200": 0.7621676325798035,
+      "puppi_response_200_300": 0.9668920040130615,
+      "puppi_response_300_400": 1.0,
+      "puppi_response_400_inf": 1.0,
+      "puppi_auc": 0.9534063260340632,
+      "puppi_n_signal": 15,
+      "puppi_n_background": 274,
+      "delta_met_pt_resolution": 39.06163024902344,
+      "delta_met_x_resolution": 13.26051559448242,
+      "delta_met_y_resolution": 16.378043899536117,
+      "delta_phi_resolution": 0.6548585665225988,
+      "delta_auc": -0.29720194647201936,
+      "mean_pred_pt_over_puppi_pt": 0.9315274953842163
+    },
+    "delta_card": {
+      "met_pt_resolution": 42.86698532104492,
+      "met_x_resolution": 20.862990646362313,
+      "met_y_resolution": 21.490222854614245,
+      "mean_response": -0.20511407653490704,
+      "phi_resolution": 0.6640980911254881,
+      "response_50_100": -0.17052561044692993,
+      "response_100_200": -0.23982536792755127,
+      "response_200_300": -0.20499125123023987,
+      "response_300_400": 0.0,
+      "response_400_inf": 0.0,
+      "auc": -0.32396593673965945,
+      "n_signal": 0,
+      "n_background": 0,
+      "puppi_met_pt_resolution": 0.0,
+      "puppi_met_x_resolution": 0.0,
+      "puppi_met_y_resolution": 0.0,
+      "puppi_mean_response": 0.0,
+      "puppi_phi_resolution": 0.0,
+      "puppi_response_50_100": 0.0,
+      "puppi_response_100_200": 0.0,
+      "puppi_response_200_300": 0.0,
+      "puppi_response_300_400": 0.0,
+      "puppi_response_400_inf": 0.0,
+      "puppi_auc": 0.0,
+      "puppi_n_signal": 0,
+      "puppi_n_background": 0,
+      "delta_met_pt_resolution": 42.86698532104492,
+      "delta_met_x_resolution": 20.862990646362313,
+      "delta_met_y_resolution": 21.490222854614245,
+      "delta_phi_resolution": 0.6640980911254881,
+      "delta_auc": -0.32396593673965945,
+      "mean_pred_pt_over_puppi_pt": 0.17450737953186035
+    },
+    "n_events": 500,
+    "model_path": "/home/users/dprimosc/L1DeepMET/.claude/worktrees/ml-pipeline/reports/qat_validation_may2026/fp32/bounded_mae_only_xy0_seed42/best_model.keras"
+  },
+  "hgq2": {
+    "keras_card": {
+      "met_pt_resolution": 43.7658748626709,
+      "met_x_resolution": 35.62275772094726,
+      "met_y_resolution": 35.814227142333976,
+      "mean_response": 0.5210169851779938,
+      "phi_resolution": 1.0997824335098265,
+      "response_50_100": 0.5543565154075623,
+      "response_100_200": 0.44288310408592224,
+      "response_200_300": 0.5658113360404968,
+      "response_300_400": 1.0,
+      "response_400_inf": 1.0,
+      "auc": 0.9467153284671533,
+      "n_signal": 15,
+      "n_background": 274,
+      "puppi_met_pt_resolution": 44.39435577392578,
+      "puppi_met_x_resolution": 39.1902970123291,
+      "puppi_met_y_resolution": 37.60923034667969,
+      "puppi_mean_response": 0.887276271979014,
+      "puppi_phi_resolution": 1.1047804105281822,
+      "puppi_response_50_100": 0.9327691793441772,
+      "puppi_response_100_200": 0.7621676325798035,
+      "puppi_response_200_300": 0.9668920040130615,
+      "puppi_response_300_400": 1.0,
+      "puppi_response_400_inf": 1.0,
+      "puppi_auc": 0.9534063260340632,
+      "puppi_n_signal": 15,
+      "puppi_n_background": 274,
+      "delta_met_pt_resolution": -0.6284809112548828,
+      "delta_met_x_resolution": -3.5675392913818342,
+      "delta_met_y_resolution": -1.7950032043457114,
+      "delta_phi_resolution": -0.004997977018355693,
+      "delta_auc": -0.006690997566909829,
+      "mean_pred_pt_over_puppi_pt": 0.6105015873908997
+    },
+    "hls_card": {
+      "met_pt_resolution": 44.14149856567383,
+      "met_x_resolution": 38.64154319763183,
+      "met_y_resolution": 40.26880630493164,
+      "mean_response": 0.5467128455638885,
+      "phi_resolution": 1.2264298224449153,
+      "response_50_100": 0.5998474359512329,
+      "response_100_200": 0.4568091928958893,
+      "response_200_300": 0.5834819078445435,
+      "response_300_400": 1.0,
+      "response_400_inf": 1.0,
+      "auc": 0.9722627737226277,
+      "n_signal": 15,
+      "n_background": 274,
+      "puppi_met_pt_resolution": 44.39435577392578,
+      "puppi_met_x_resolution": 39.1902970123291,
+      "puppi_met_y_resolution": 37.60923034667969,
+      "puppi_mean_response": 0.887276271979014,
+      "puppi_phi_resolution": 1.1047804105281822,
+      "puppi_response_50_100": 0.9327691793441772,
+      "puppi_response_100_200": 0.7621676325798035,
+      "puppi_response_200_300": 0.9668920040130615,
+      "puppi_response_300_400": 1.0,
+      "puppi_response_400_inf": 1.0,
+      "puppi_auc": 0.9534063260340632,
+      "puppi_n_signal": 15,
+      "puppi_n_background": 274,
+      "delta_met_pt_resolution": -0.2528572082519531,
+      "delta_met_x_resolution": -0.5487538146972639,
+      "delta_met_y_resolution": 2.659575958251949,
+      "delta_phi_resolution": 0.12164941191673306,
+      "delta_auc": 0.018856447688564537,
+      "mean_pred_pt_over_puppi_pt": 0.7724133133888245
+    },
+    "delta_card": {
+      "met_pt_resolution": 0.3756237030029297,
+      "met_x_resolution": 3.0187854766845703,
+      "met_y_resolution": 4.4545791625976605,
+      "mean_response": 0.025695860385894775,
+      "phi_resolution": 0.12664738893508876,
+      "response_50_100": 0.045490920543670654,
+      "response_100_200": 0.013926088809967041,
+      "response_200_300": 0.01767057180404663,
+      "response_300_400": 0.0,
+      "response_400_inf": 0.0,
+      "auc": 0.025547445255474366,
+      "n_signal": 0,
+      "n_background": 0,
+      "puppi_met_pt_resolution": 0.0,
+      "puppi_met_x_resolution": 0.0,
+      "puppi_met_y_resolution": 0.0,
+      "puppi_mean_response": 0.0,
+      "puppi_phi_resolution": 0.0,
+      "puppi_response_50_100": 0.0,
+      "puppi_response_100_200": 0.0,
+      "puppi_response_200_300": 0.0,
+      "puppi_response_300_400": 0.0,
+      "puppi_response_400_inf": 0.0,
+      "puppi_auc": 0.0,
+      "puppi_n_signal": 0,
+      "puppi_n_background": 0,
+      "delta_met_pt_resolution": 0.3756237030029297,
+      "delta_met_x_resolution": 3.0187854766845703,
+      "delta_met_y_resolution": 4.4545791625976605,
+      "delta_phi_resolution": 0.12664738893508876,
+      "delta_auc": 0.025547445255474366,
+      "mean_pred_pt_over_puppi_pt": 0.1619117259979248
+    },
+    "n_events": 500,
+    "model_path": "/home/users/dprimosc/L1DeepMET/.claude/worktrees/ml-pipeline/reports/qat_validation_may2026/hgq2/best_model.keras",
+    "bitwidth_stats": {
+      "per_layer": [
+        {
+          "layer": "emb_pdgid",
+          "kind": "kq",
+          "shape": [
+            6,
+            4
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 24,
+          "n_total": 24,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "emb_pdgid",
+          "kind": "iq",
+          "shape": [
+            1,
+            128,
+            6
+          ],
+          "min": 3.0,
+          "max": 3.0,
+          "mean": 3.0,
+          "n_zero": 0,
+          "n_total": 768,
+          "sum_bits": 2304.0
+        },
+        {
+          "layer": "emb_charge",
+          "kind": "kq",
+          "shape": [
+            4,
+            2
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 8,
+          "n_total": 8,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "emb_charge",
+          "kind": "iq",
+          "shape": [
+            1,
+            128,
+            4
+          ],
+          "min": 3.0,
+          "max": 3.0,
+          "mean": 3.0,
+          "n_zero": 0,
+          "n_total": 512,
+          "sum_bits": 1536.0
+        },
+        {
+          "layer": "qdense_0",
+          "kind": "kq",
+          "shape": [
+            11,
+            64
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 704,
+          "n_total": 704,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "qdense_0",
+          "kind": "iq",
+          "shape": [
+            1,
+            128,
+            11
+          ],
+          "min": 3.0,
+          "max": 8.0,
+          "mean": 3.423295497894287,
+          "n_zero": 0,
+          "n_total": 1408,
+          "sum_bits": 4820.0
+        },
+        {
+          "layer": "qdense_0",
+          "kind": "bq",
+          "shape": [
+            64
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 64,
+          "n_total": 64,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "qbn_0",
+          "kind": "kq",
+          "shape": [
+            64
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 64,
+          "n_total": 64,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "qbn_0",
+          "kind": "iq",
+          "shape": [
+            1,
+            128,
+            64
+          ],
+          "min": 3.0,
+          "max": 7.0,
+          "mean": 4.5263671875,
+          "n_zero": 0,
+          "n_total": 8192,
+          "sum_bits": 37080.0
+        },
+        {
+          "layer": "qbn_0",
+          "kind": "bq",
+          "shape": [
+            64
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 64,
+          "n_total": 64,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "qdense_1",
+          "kind": "kq",
+          "shape": [
+            64,
+            64
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 4096,
+          "n_total": 4096,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "qdense_1",
+          "kind": "iq",
+          "shape": [
+            1,
+            128,
+            64
+          ],
+          "min": 3.0,
+          "max": 6.0,
+          "mean": 3.4613037109375,
+          "n_zero": 0,
+          "n_total": 8192,
+          "sum_bits": 28355.0
+        },
+        {
+          "layer": "qdense_1",
+          "kind": "bq",
+          "shape": [
+            64
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 64,
+          "n_total": 64,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "qbn_1",
+          "kind": "kq",
+          "shape": [
+            64
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 64,
+          "n_total": 64,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "qbn_1",
+          "kind": "iq",
+          "shape": [
+            1,
+            128,
+            64
+          ],
+          "min": 3.0,
+          "max": 6.0,
+          "mean": 4.01318359375,
+          "n_zero": 0,
+          "n_total": 8192,
+          "sum_bits": 32876.0
+        },
+        {
+          "layer": "qbn_1",
+          "kind": "bq",
+          "shape": [
+            64
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 64,
+          "n_total": 64,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "qdense_2",
+          "kind": "kq",
+          "shape": [
+            64,
+            64
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 4096,
+          "n_total": 4096,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "qdense_2",
+          "kind": "iq",
+          "shape": [
+            1,
+            128,
+            64
+          ],
+          "min": 3.0,
+          "max": 6.0,
+          "mean": 3.767822265625,
+          "n_zero": 0,
+          "n_total": 8192,
+          "sum_bits": 30866.0
+        },
+        {
+          "layer": "qdense_2",
+          "kind": "bq",
+          "shape": [
+            64
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 64,
+          "n_total": 64,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "qbn_2",
+          "kind": "kq",
+          "shape": [
+            64
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 64,
+          "n_total": 64,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "qbn_2",
+          "kind": "iq",
+          "shape": [
+            1,
+            128,
+            64
+          ],
+          "min": 3.0,
+          "max": 7.0,
+          "mean": 4.2750244140625,
+          "n_zero": 0,
+          "n_total": 8192,
+          "sum_bits": 35021.0
+        },
+        {
+          "layer": "qbn_2",
+          "kind": "bq",
+          "shape": [
+            64
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 64,
+          "n_total": 64,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "qmet_weight",
+          "kind": "kq",
+          "shape": [
+            64,
+            1
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 64,
+          "n_total": 64,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "qmet_weight",
+          "kind": "iq",
+          "shape": [
+            1,
+            128,
+            64
+          ],
+          "min": 3.0,
+          "max": 6.0,
+          "mean": 3.6488037109375,
+          "n_zero": 0,
+          "n_total": 8192,
+          "sum_bits": 29891.0
+        },
+        {
+          "layer": "qmet_weight",
+          "kind": "bq",
+          "shape": [
+            1
+          ],
+          "min": 0.0,
+          "max": 0.0,
+          "mean": 0.0,
+          "n_zero": 1,
+          "n_total": 1,
+          "sum_bits": 0.0
+        },
+        {
+          "layer": "qbounded_scale",
+          "kind": "kq",
+          "shape": [
+            1,
+            1
+          ],
+          "min": 2.0,
+          "max": 2.0,
+          "mean": 2.0,
+          "n_zero": 0,
+          "n_total": 1,
+          "sum_bits": 2.0
+        },
+        {
+          "layer": "qbounded_scale",
+          "kind": "iq",
+          "shape": [
+            1,
+            128,
+            1
+          ],
+          "min": 2.0,
+          "max": 4.0,
+          "mean": 3.3828125,
+          "n_zero": 0,
+          "n_total": 128,
+          "sum_bits": 433.0
+        },
+        {
+          "layer": "qbounded_scale",
+          "kind": "bq",
+          "shape": [
+            1
+          ],
+          "min": 3.0,
+          "max": 3.0,
+          "mean": 3.0,
+          "n_zero": 0,
+          "n_total": 1,
+          "sum_bits": 3.0
+        },
+        {
+          "layer": "qavg_over_particles",
+          "kind": "iq",
+          "shape": [
+            1,
+            128,
+            2
+          ],
+          "min": 1.0,
+          "max": 10.0,
+          "mean": 7.16015625,
+          "n_zero": 0,
+          "n_total": 256,
+          "sum_bits": 1833.0
+        },
+        {
+          "layer": "output",
+          "kind": "kq",
+          "shape": [
+            2,
+            2
+          ],
+          "min": 0.0,
+          "max": 2.0,
+          "mean": 1.0,
+          "n_zero": 2,
+          "n_total": 4,
+          "sum_bits": 4.0
+        },
+        {
+          "layer": "output",
+          "kind": "iq",
+          "shape": [
+            1,
+            2
+          ],
+          "min": 8.0,
+          "max": 8.0,
+          "mean": 8.0,
+          "n_zero": 0,
+          "n_total": 2,
+          "sum_bits": 16.0
+        }
+      ],
+      "total_kernel_bits": 6,
+      "total_kernel_zeros": 9186,
+      "total_kernel_params": 9189,
+      "sparsity_pct": 99.97,
+      "avg_kernel_bitwidth": 0.001
+    }
+  }
+}

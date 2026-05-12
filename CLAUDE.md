@@ -2,6 +2,30 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Development workflow (STANDING ORDER)
+
+**Test-first.** All new code must be developed test-first:
+
+1. **Write a unit test** describing the function/class's expected behavior, in
+   `tests/unit/<area>/test_<name>.py`. Run it; it should fail (red).
+2. **Write the implementation** in `src/l1deepmet/<area>/<name>.py`. Run the
+   test again; it should pass (green).
+3. **Commit** in small increments — one test+implementation per commit when
+   possible.
+
+Ad-hoc smoke tests via `python -c '...'` are useful for debugging but **do not
+count** as the required tests. The test must live in `tests/` and run under
+`pytest`.
+
+For new infrastructure (e.g. ``src/l1deepmet/synthesis/``,
+``src/l1deepmet/quantization/``) a `tests/unit/<module>/` directory should be
+created alongside, with at minimum: one test per public function, one test for
+each architectural variant the module supports, and one integration test that
+exercises the full module end-to-end against a tiny synthetic input.
+
+If you find yourself writing code without writing a test first, **stop and
+write the test**, then continue.
+
 ## Project Overview
 
 **L1DeepMET** reconstructs Level-1 Missing Transverse Energy (MET) for the CMS detector at the HL-LHC using hardware-aware deep learning. Models are ultimately deployed on FPGAs via HLS4ML. The framework processes PUPPI particle candidates (up to 128 per event) and predicts MET as (px, py).

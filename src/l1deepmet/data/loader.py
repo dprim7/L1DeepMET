@@ -131,6 +131,7 @@ class H5DataLoader:
             })
 
             # Map to (inputs, targets) format for training
+            # num_parallel_calls=1 to avoid spawning extra threads
             dataset = dataset.map(
                 lambda x: (
                     {
@@ -140,7 +141,8 @@ class H5DataLoader:
                         'charge_inputs': x['charge_inputs']
                     },
                     x['targets']
-                )
+                ),
+                num_parallel_calls=1,
             )
         else:
             features, targets = self.load_data(split)
@@ -152,7 +154,14 @@ class H5DataLoader:
             dataset = dataset.shuffle(buffer_size=10000)
         
         dataset = dataset.batch(batch_size)
-        dataset = dataset.prefetch(tf.data.AUTOTUNE)
+        # Use prefetch(1) instead of AUTOTUNE to limit thread creation
+        # on thread-constrained shared systems.
+        # Also set threading options to minimize private threadpool size.
+        options = tf.data.Options()
+        options.threading.private_threadpool_size = 1
+        options.threading.max_intra_op_parallelism = 1
+        dataset = dataset.with_options(options)
+        dataset = dataset.prefetch(1)
         
         logger.info(f"Created TensorFlow dataset for {split}: batch_size={batch_size}, shuffle={shuffle}")
         return dataset

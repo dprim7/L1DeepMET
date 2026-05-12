@@ -1,6 +1,20 @@
 outputs/
+hls_output/
 checkpoints/
 logs/
+
+# Generated HLS C++ projects and bit-accurate sim libs that land under
+# experiment report directories. Reproducible from the saved Keras model
+# (`scripts/synthesize.py`); ~5 MB per run; not worth tracking.
+reports/**/hls/firmware/
+reports/**/hls/tb_data/
+reports/**/hls/*.so
+reports/**/hls/*.tcl
+reports/**/hls/keras_model.keras
+
+# Training outputs that live under report directories. The saved Keras model
+# is worth tracking; the per-epoch history.csv and CSVLogger output aren't.
+reports/**/history.csv
 *.h5
 *.hdf5
 *.pkl

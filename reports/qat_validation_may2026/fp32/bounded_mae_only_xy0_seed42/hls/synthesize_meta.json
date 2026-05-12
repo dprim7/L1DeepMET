@@ -1,0 +1,12 @@
+{
+  "model_path": "/home/users/dprimosc/L1DeepMET/.claude/worktrees/ml-pipeline/reports/qat_validation_may2026/fp32/bounded_mae_only_xy0_seed42/best_model.keras",
+  "part": "xcvu13p-flga2577-2-e",
+  "clock_period_ns": 5.0,
+  "io_type": "io_parallel",
+  "strategy": "Latency",
+  "default_precision": "ap_fixed<32,16>",
+  "default_reuse_factor": 1,
+  "project_name": "l1deepmet",
+  "n_keras_params": 9961,
+  "skip_validation": false
+}

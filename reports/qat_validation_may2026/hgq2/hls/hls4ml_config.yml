@@ -1,0 +1,213 @@
+Backend: Vivado
+ClockPeriod: 5.0
+ClockUncertainty: 12.5%
+HLSConfig:
+  LayerName:
+    charge_inputs:
+      Precision:
+        result: ap_uint<4>
+      Trace: true
+    concat_cont_pdgid:
+      Precision:
+        result: auto
+      Trace: true
+    concat_features:
+      Precision:
+        result: auto
+      Trace: true
+    continuous_inputs:
+      Precision:
+        result: auto
+      Trace: true
+    emb_charge:
+      Precision:
+        bias: auto
+        result: auto
+        weight: auto
+      Trace: true
+    emb_charge_iq:
+      Precision:
+        result: auto
+      Trace: true
+    emb_pdgid:
+      Precision:
+        bias: auto
+        result: auto
+        weight: auto
+      Trace: true
+    emb_pdgid_iq:
+      Precision:
+        result: auto
+      Trace: true
+    momentum_inputs:
+      Precision:
+        result: auto
+      Trace: true
+    output:
+      Precision:
+        bias: auto
+        result: auto
+        weight: auto
+      Trace: true
+    output_iq:
+      Precision:
+        result: auto
+      Trace: true
+    pdgid_inputs:
+      Precision:
+        result: ap_uint<4>
+      Trace: true
+    qact_0:
+      Precision:
+        result: auto
+      Trace: true
+    qact_1:
+      Precision:
+        result: auto
+      Trace: true
+    qact_2:
+      Precision:
+        result: auto
+      Trace: true
+    qavg_over_particles:
+      Precision:
+        result: auto
+      Trace: true
+    qavg_over_particles_iq:
+      Precision:
+        result: auto
+      Trace: true
+    qbn_0:
+      Precision:
+        bias: auto
+        result: auto
+        scale: auto
+      Trace: true
+    qbn_0_iq:
+      Precision:
+        result: auto
+      Trace: true
+    qbn_1:
+      Precision:
+        bias: auto
+        result: auto
+        scale: auto
+      Trace: true
+    qbn_1_iq:
+      Precision:
+        result: auto
+      Trace: true
+    qbn_2:
+      Precision:
+        bias: auto
+        result: auto
+        scale: auto
+      Trace: true
+    qbn_2_iq:
+      Precision:
+        result: auto
+      Trace: true
+    qbounded_scale:
+      Precision:
+        bias: auto
+        result: auto
+        weight: auto
+      Trace: true
+    qbounded_scale_iq:
+      Precision:
+        result: auto
+      Trace: true
+    qdense_0:
+      Precision:
+        bias: auto
+        result: auto
+        weight: auto
+      Trace: true
+    qdense_0_iq:
+      Precision:
+        result: auto
+      Trace: true
+    qdense_1:
+      Precision:
+        bias: auto
+        result: auto
+        weight: auto
+      Trace: true
+    qdense_1_iq:
+      Precision:
+        result: auto
+      Trace: true
+    qdense_2:
+      Precision:
+        bias: auto
+        result: auto
+        weight: auto
+      Trace: true
+    qdense_2_iq:
+      Precision:
+        result: auto
+      Trace: true
+    qmet_weight:
+      Precision:
+        bias: auto
+        result: auto
+        weight: auto
+      Trace: true
+    qmet_weight_iq:
+      Precision:
+        result: auto
+      Trace: true
+    qtanh:
+      Precision:
+        result: auto
+      Trace: true
+    quantizer:
+      Precision:
+        result: auto
+      Trace: true
+    quantizer_1:
+      Precision:
+        result: auto
+      Trace: true
+    qweight_pxpy:
+      Precision:
+        result: auto
+      Trace: true
+  Model:
+    BitExact: null
+    BramFactor: 1000000000
+    Precision:
+      default: ap_fixed<32,16>
+    ReuseFactor: 1
+    Strategy: Latency
+    TraceOutput: false
+IOType: io_parallel
+InputData: null
+InputShapes:
+  charge_inputs:
+  - 128
+  - 4
+  continuous_inputs:
+  - 128
+  - 5
+  momentum_inputs:
+  - 128
+  - 2
+  pdgid_inputs:
+  - 128
+  - 6
+KerasModel: !keras_model '/home/users/dprimosc/L1DeepMET/.claude/worktrees/ml-pipeline/reports/qat_validation_may2026/hgq2/hls/keras_model.keras'
+OutputDir: /home/users/dprimosc/L1DeepMET/.claude/worktrees/ml-pipeline/reports/qat_validation_may2026/hgq2/hls
+OutputPredictions: null
+OutputShapes:
+  layer37_out:
+  - 2
+Part: xcvu13p-flga2577-2-e
+ProjectName: l1deepmet
+Stamp: 2405e1be
+Version: 1.0.0
+WriterConfig:
+  Namespace: null
+  TBOutputStream: both
+  WriteTar: false
+  WriteWeightsTxt: true
