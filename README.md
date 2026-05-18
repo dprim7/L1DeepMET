@@ -2,7 +2,6 @@
 
 Hardware-aware deep learning framework for Level-1 Missing Transverse Energy reconstruction on FPGAs for CMS and the next generation HL-LHC.
 
-This project is an extensive refactor and extension of https://github.com/ucsd-hep-ex/L1METML 
 
 ## Quick Start
 
