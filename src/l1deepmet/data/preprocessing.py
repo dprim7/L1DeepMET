@@ -18,6 +18,52 @@ from l1deepmet.utils import to_np_array
 logger = logging.getLogger(__name__)
 
 
+def _existing_branches(files_with_tree: List[str], wanted: List[str]) -> List[str]:
+    """Filter `wanted` down to branches that actually exist in the first ROOT file.
+
+    Used so uproot.iterate doesn't crash when a config lists branches that exist
+    in NEW ntuples (extended recipe) but not in OLD ones (or vice versa). The
+    caller is responsible for substituting zeros for branches that get filtered
+    out — see _safe_get below.
+    """
+    if not files_with_tree:
+        return list(wanted)
+    # Open the first file with uproot to read available branches
+    first = files_with_tree[0]
+    path = first.split(":")[0] if ":" in first else first
+    tree = first.split(":")[1] if ":" in first else "Events"
+    try:
+        with uproot.open(path) as h:
+            available = set(h[tree].keys())
+    except Exception:
+        return list(wanted)
+    missing = [b for b in wanted if b not in available]
+    if missing:
+        logger.warning(
+            f"Branches not in {path} (will be zero-filled at load time): {missing}"
+        )
+    return [b for b in wanted if b in available]
+
+
+def _safe_get(arrays: Dict[str, Any], branch: str, max_pf: int,
+              pad: float, default_shape_from: str) -> np.ndarray:
+    """Load a per-candidate branch as a padded (n_events, max_pf) numpy array.
+
+    If the branch is missing from `arrays` (because the file didn't have it
+    and it was filtered out by _existing_branches), return zeros shaped like
+    the always-present `default_shape_from` branch. This is what lets the
+    extended preprocessor produce a constant-shape output regardless of
+    whether the input ntuple has the new branches or not.
+    """
+    # NB: do NOT use `branch in arrays` here — for an awkward Record that's
+    # an element-wise broadcast, not a field-name lookup. Inspect .fields.
+    if branch in getattr(arrays, "fields", ()):
+        return to_np_array(arrays[branch], maxN=max_pf, pad=pad)
+    # Fallback — shape from a reference branch we know exists
+    ref = to_np_array(arrays[default_shape_from], maxN=max_pf, pad=0.0)
+    return np.zeros_like(ref)
+
+
 def HCalDepth(
     hcal_first1: np.ndarray, hcal_first3: np.ndarray, hcal_first5: np.ndarray
 ) -> np.ndarray:
@@ -97,10 +143,27 @@ def load_samples_to_numpy(
             puppiw = to_np_array(arrays["L1PuppiCands_puppiWeight"], maxN=max_pf, pad=0.0)
             dxyErr = to_np_array(arrays["L1PuppiCands_dxyErr"], maxN=max_pf, pad=1000.0)
 
+            # KNOWN-BROKEN LEGACY JOIN ─────────────────────────────────────
+            # HGCal3DCl_* branches are PER-CLUSTER, not per-candidate. Padding
+            # them up to max_pf=128 with the same shape as L1PuppiCands_* and
+            # then writing to X[:, :, candidate_index] places HGCal-cluster
+            # values into candidate slots whose indices don't correspond to
+            # each other. The resulting hcal_depth feature in legacy H5s is
+            # essentially garbage (data exploration confirmed it's ≈ 0
+            # everywhere after sanitisation).
+            #
+            # Phase 1 of the ntuple pipeline plan keeps this path intact for
+            # bitwise-compatible reproduction of 25Jul8_140X_v0 outputs (we
+            # haven't shown re-training a model on the corrected join yet),
+            # but the extended preprocessor (load_samples_to_numpy_extended)
+            # zero-fills hcal_depth explicitly to avoid propagating the bug.
+            # The proper ΔR-based join is a Phase 3 item — see
+            # reports/ntuple_pipeline_plan/PLAN.md §1.1 and P1.7.
             h1 = to_np_array(arrays["HGCal3DCl_firstHcal1layers"], maxN=max_pf, pad=0.0)
             h3 = to_np_array(arrays["HGCal3DCl_firstHcal3layers"], maxN=max_pf, pad=0.0)
             h5 = to_np_array(arrays["HGCal3DCl_firstHcal5layers"], maxN=max_pf, pad=0.0)
             hcalDepth = HCalDepth(h1, h3, h5)
+            # ───────────────────────────────────────────────────────────────
 
             px = pt * np.cos(phi)
             py = pt * np.sin(phi)
@@ -142,7 +205,188 @@ def load_samples_to_numpy(
     return results
 
 
-def select_events(results: Dict[str, Tuple[np.ndarray, np.ndarray]], 
+def load_samples_to_numpy_extended(
+    data_root: Union[str, Path],
+    sample_names: List[str],
+    feature_layout: List[str],
+    var_list_mc: Optional[List[str]] = None,
+    *,
+    max_pf: int,
+    encoding: Dict[str, Dict[float, int]],
+    include_mc: bool = True,
+    step_size: str = "100 MB",
+    file_pattern: str = "*.root",
+    tree_name: str = "Events",
+    dtype=np.float32,
+) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
+    """Extended preprocessor: load arbitrary candidate-level branches.
+
+    Unlike ``load_samples_to_numpy`` (which is hardcoded to 9 features), this
+    function takes a *declarative* ``feature_layout`` — an ordered list of
+    feature names — and produces a ``(n_events, max_pf, len(feature_layout))``
+    array where each slot is either a direct branch load or a derived feature.
+
+    Supported feature names (controlled by the L1DeepMET extended recipe):
+
+      Direct branches (loaded as-is from L1PuppiCands_<name>):
+        pt, eta, phi, puppiWeight, dxyErr, mass, z0,
+        hwPt, hwEta, hwPhi, hwPuppiWeight, hwQual,
+        trackChi2RPhi, trackChi2RZ, trackChi2Bend, trackNStubs,
+        trackMvaQual, caloEta, caloPhi, clPuId, clEmId, clPt, clEmEt
+
+      Derived:
+        px         = pt × cos(phi)
+        py         = pt × sin(phi)
+        encoded_pdgId  (via `encoding["L1PuppiCands_pdgId"]`)
+        encoded_charge (via `encoding["L1PuppiCands_charge"]`)
+
+    Missing branches are zero-filled with a logged warning (see _existing_branches).
+    Pad value for each direct branch is 0.0 unless special-cased (pdgId/charge get
+    -999.0 before encoding; dxyErr gets 1000.0 to match the legacy convention).
+    """
+    data_root = Path(data_root)
+    results: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+
+    # Map feature_layout names → either a "branch:<L1PuppiCands_*>" spec or a "derived:*"
+    DIRECT_BRANCHES = {
+        "pt": ("L1PuppiCands_pt", 0.0),
+        "eta": ("L1PuppiCands_eta", 0.0),
+        "phi": ("L1PuppiCands_phi", 0.0),
+        "puppi_weight": ("L1PuppiCands_puppiWeight", 0.0),
+        "puppiWeight": ("L1PuppiCands_puppiWeight", 0.0),
+        "dxyErr": ("L1PuppiCands_dxyErr", 1000.0),
+        "mass": ("L1PuppiCands_mass", 0.0),
+        "z0": ("L1PuppiCands_z0", 0.0),
+        "hwPt": ("L1PuppiCands_hwPt", 0.0),
+        "hwEta": ("L1PuppiCands_hwEta", 0.0),
+        "hwPhi": ("L1PuppiCands_hwPhi", 0.0),
+        "hwPuppiWeight": ("L1PuppiCands_hwPuppiWeight", 0.0),
+        "hwQual": ("L1PuppiCands_hwQual", 0.0),
+        "trackChi2RPhi": ("L1PuppiCands_trackChi2RPhi", -1.0),
+        "trackChi2RZ":   ("L1PuppiCands_trackChi2RZ", -1.0),
+        "trackChi2Bend": ("L1PuppiCands_trackChi2Bend", -1.0),
+        "trackNStubs":   ("L1PuppiCands_trackNStubs", -1.0),
+        "trackMvaQual":  ("L1PuppiCands_trackMvaQual", -1.0),
+        "caloEta": ("L1PuppiCands_caloEta", -999.0),
+        "caloPhi": ("L1PuppiCands_caloPhi", -999.0),
+        "clPuId":  ("L1PuppiCands_clPuId", -1.0),
+        "clEmId":  ("L1PuppiCands_clEmId", -1.0),
+        "clPt":    ("L1PuppiCands_clPt", -1.0),
+        "clEmEt":  ("L1PuppiCands_clEmEt", -1.0),
+    }
+    DERIVED = {"px", "py", "encoded_pdgId", "encoded_charge", "hcal_depth"}
+
+    # Wanted branches = whatever the layout needs + the always-needed ones for
+    # derived features (pdgId, charge for encoding; phi for px/py)
+    wanted: List[str] = []
+    for feat in feature_layout:
+        if feat in DIRECT_BRANCHES:
+            wanted.append(DIRECT_BRANCHES[feat][0])
+    # Branches needed for derived features:
+    derived_in_layout = [f for f in feature_layout if f in DERIVED]
+    if any(d in derived_in_layout for d in ("px", "py")):
+        wanted += ["L1PuppiCands_pt", "L1PuppiCands_phi"]
+    if "encoded_pdgId" in derived_in_layout:
+        wanted.append("L1PuppiCands_pdgId")
+    if "encoded_charge" in derived_in_layout:
+        wanted.append("L1PuppiCands_charge")
+    if "hcal_depth" in derived_in_layout:
+        wanted += [
+            "HGCal3DCl_firstHcal1layers",
+            "HGCal3DCl_firstHcal3layers",
+            "HGCal3DCl_firstHcal5layers",
+        ]
+    # de-dup, preserve order
+    seen: set[str] = set()
+    wanted = [b for b in wanted if not (b in seen or seen.add(b))]
+    if include_mc and var_list_mc:
+        wanted += list(var_list_mc)
+
+    n_features = len(feature_layout)
+    logger.info(f"Extended preprocessor: {n_features} features from layout {feature_layout}")
+
+    for i, sample in enumerate(sample_names, 1):
+        logger.info(f"[{i}/{len(sample_names)}] Processing sample: {sample}")
+        files = sorted((data_root / sample).rglob(file_pattern))
+        if not files:
+            raise FileNotFoundError(f"No ROOT files for sample '{sample}' under {data_root / sample}")
+        files_with_tree = [str(f) + f":{tree_name}" for f in files]
+
+        # Filter wanted-list down to branches that actually exist in the file
+        branches = _existing_branches(files_with_tree, wanted)
+
+        X_parts: List[np.ndarray] = []
+        Y_parts: List[np.ndarray] = []
+        ref_branch = "L1PuppiCands_pt"  # always present; used for zero-fallback shape
+
+        for arrays in uproot.iterate(files_with_tree, expressions=branches,
+                                     step_size=step_size, library="ak"):
+            # Reference shape from pt
+            pt = to_np_array(arrays["L1PuppiCands_pt"], maxN=max_pf, pad=0.0)
+            phi = to_np_array(arrays["L1PuppiCands_phi"], maxN=max_pf, pad=0.0) \
+                if "L1PuppiCands_phi" in getattr(arrays, "fields", ()) else np.zeros_like(pt)
+            nevents = pt.shape[0]
+
+            # Derived features
+            px = pt * np.cos(phi)
+            py = pt * np.sin(phi)
+            enc_pdg = enc_chg = hcal_depth = None
+            if "encoded_pdgId" in feature_layout:
+                pdgid = _safe_get(arrays, "L1PuppiCands_pdgId", max_pf, -999.0, ref_branch)
+                enc_pdg = np.vectorize(encoding["L1PuppiCands_pdgId"].__getitem__)(
+                    pdgid.astype(float)
+                )
+            if "encoded_charge" in feature_layout:
+                chg = _safe_get(arrays, "L1PuppiCands_charge", max_pf, -999.0, ref_branch)
+                enc_chg = np.vectorize(encoding["L1PuppiCands_charge"].__getitem__)(
+                    chg.astype(float)
+                )
+            if "hcal_depth" in feature_layout:
+                # NB: HGCal3DCl_* branches are PER-CLUSTER, not per-candidate.
+                # The legacy code indexes them by candidate-index, which produces
+                # garbage. We zero-fill this feature here as a defensive fix —
+                # see reports/ntuple_pipeline_plan/PLAN.md §1.1 and P1.7.
+                hcal_depth = np.zeros_like(pt)
+
+            # Build output array slot by slot
+            X = np.zeros((nevents, max_pf, n_features), dtype=dtype, order="F")
+            for j, feat in enumerate(feature_layout):
+                if feat in DIRECT_BRANCHES:
+                    branch, pad = DIRECT_BRANCHES[feat]
+                    X[:, :, j] = _safe_get(arrays, branch, max_pf, pad, ref_branch)
+                elif feat == "px":
+                    X[:, :, j] = px
+                elif feat == "py":
+                    X[:, :, j] = py
+                elif feat == "encoded_pdgId":
+                    X[:, :, j] = enc_pdg
+                elif feat == "encoded_charge":
+                    X[:, :, j] = enc_chg
+                elif feat == "hcal_depth":
+                    X[:, :, j] = hcal_depth
+                else:
+                    raise ValueError(f"Unknown feature in feature_layout: {feat!r}")
+
+            if include_mc and var_list_mc:
+                gen_pt = arrays["genMet_pt"].to_numpy()
+                gen_phi = arrays["genMet_phi"].to_numpy()
+                Y = np.stack([gen_pt * np.cos(gen_phi), gen_pt * np.sin(gen_phi)],
+                             axis=1).astype(dtype, copy=False)
+            else:
+                Y = np.zeros((nevents, 2), dtype=dtype)
+
+            X_parts.append(X)
+            Y_parts.append(Y)
+
+        features = np.concatenate(X_parts, axis=0) if X_parts else np.zeros((0, max_pf, n_features), dtype=dtype)
+        targets = np.concatenate(Y_parts, axis=0) if Y_parts else np.zeros((0, 2), dtype=dtype)
+        results[sample] = (features, targets)
+        logger.info(f"Sample '{sample}' complete: {features.shape[0]} events, shape {features.shape}")
+
+    return results
+
+
+def select_events(results: Dict[str, Tuple[np.ndarray, np.ndarray]],
                   samples: Dict[str, int]) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
     """
     Select desired number of events per sample.
@@ -315,25 +559,36 @@ def combine_shuffle_split(processed_results: Dict[str, Tuple[np.ndarray, np.ndar
 
 def save_h5_files(X_train: np.ndarray, X_val: np.ndarray, X_test: np.ndarray,
                   Y_train: np.ndarray, Y_val: np.ndarray, Y_test: np.ndarray,
-                  output_dir: Union[str, Path], samples: Dict[str, int]) -> None:
-    """
-    Save preprocessed data to separate H5 files for train/val/test.
-    
+                  output_dir: Union[str, Path], samples: Dict[str, int],
+                  feature_layout: Optional[List[str]] = None) -> None:
+    """Save preprocessed data to train/val/test H5 files with metadata.
+
     Args:
-        X_train, X_val, X_test: Feature arrays
-        Y_train, Y_val, Y_test: Target arrays  
-        output_dir: Directory to save files
-        samples: Sample configuration dict for metadata
+        X_*, Y_*: feature/target arrays
+        output_dir: directory to save files
+        samples: sample configuration dict (event counts) for metadata
+        feature_layout: optional ordered list of feature names. If None,
+            falls back to the legacy 9-feature layout. The extended
+            preprocessor passes its own layout from
+            params.yaml::preprocess.feature_layout_extended.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"Saving preprocessed data to separate H5 files in {output_dir}")
 
+    layout = feature_layout if feature_layout is not None else [
+        'pt', 'eta', 'phi', 'puppi_weight', 'hcal_depth',
+        'px', 'py', 'encoded_pdgId', 'encoded_charge',
+    ]
+    if len(layout) != X_train.shape[2]:
+        logger.warning(
+            f"feature_layout length ({len(layout)}) doesn't match X last-axis "
+            f"({X_train.shape[2]}). H5 metadata will be inconsistent."
+        )
     # Metadata to save in each file
     metadata = {
-        'feature_layout': ['pt', 'eta', 'phi', 'puppi_weight', 'hcal_depth', 
-                          'px', 'py', 'encoded_pdgId', 'encoded_charge'],
+        'feature_layout': layout,
         'n_features': X_train.shape[2],
         'max_puppi_candidates': X_train.shape[1],
         'samples_used': list(samples.keys()),

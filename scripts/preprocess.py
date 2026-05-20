@@ -29,7 +29,8 @@ import numpy as np # type: ignore
 
 from l1deepmet.data.preprocessing import (
     load_samples_to_numpy,
-    select_events, 
+    load_samples_to_numpy_extended,
+    select_events,
     preprocess_data,
     combine_shuffle_split,
     save_h5_files,
@@ -74,6 +75,12 @@ def main():
                        help="Directory for control plots")
     parser.add_argument("--seed", type=int, default=42,
                        help="Random seed for reproducibility")
+    parser.add_argument("--feature-layout", choices=["legacy", "extended"], default="legacy",
+                       help="legacy: 9-feature output via load_samples_to_numpy (default; "
+                            "matches existing 25Jul8 outputs). "
+                            "extended: variable-N-feature via load_samples_to_numpy_extended; "
+                            "layout comes from params.yaml::preprocess.feature_layout_extended. "
+                            "Missing branches in the input ntuples are zero-filled with a warning.")
     
     args = parser.parse_args()
     
@@ -130,40 +137,68 @@ def main():
     logger.info(f"Random seed set to: {args.seed}")
     
     # Load raw ROOT data
-    logger.info("Loading raw ROOT data...")
-    
-    results = load_samples_to_numpy(
-        data_root=data_root,
-        sample_names=sample_names,
-        var_list=var_list,
-        var_list_mc=var_list_mc,
-        max_pf=max_pf,
-        encoding=encoding,
-        include_mc=include_mc,
-        step_size="100 MB",
-        dtype=np.float32,
-    )
+    logger.info(f"Loading raw ROOT data (feature_layout={args.feature_layout})...")
+
+    if args.feature_layout == "extended":
+        feature_layout = preprocess_cfg.get("feature_layout_extended")
+        if not feature_layout:
+            raise SystemExit(
+                "feature_layout=extended requested but params.yaml has no "
+                "`preprocess.feature_layout_extended` list."
+            )
+        results = load_samples_to_numpy_extended(
+            data_root=data_root,
+            sample_names=sample_names,
+            feature_layout=feature_layout,
+            var_list_mc=var_list_mc,
+            max_pf=max_pf,
+            encoding=encoding,
+            include_mc=include_mc,
+            step_size="100 MB",
+            dtype=np.float32,
+        )
+        logger.info(f"Extended layout produced {len(feature_layout)} features per particle: {feature_layout}")
+    else:
+        results = load_samples_to_numpy(
+            data_root=data_root,
+            sample_names=sample_names,
+            var_list=var_list,
+            var_list_mc=var_list_mc,
+            max_pf=max_pf,
+            encoding=encoding,
+            include_mc=include_mc,
+            step_size="100 MB",
+            dtype=np.float32,
+        )
     
     # Select events per sample
     logger.info("Selecting events per sample...")
-    
+
     selected_results = select_events(results, samples)
-    
-    # Apply preprocessing
-    logger.info("Applying preprocessing...")
-    
-    processed_results = preprocess_data(selected_results)
-    
+
+    # Apply preprocessing (legacy 10→9-feature transform). The extended path
+    # has already produced final-layout features in load_samples_to_numpy_extended,
+    # so we skip this step.
+    if args.feature_layout == "extended":
+        logger.info("Extended layout — skipping legacy preprocess_data (already in final layout)")
+        processed_results = selected_results
+    else:
+        logger.info("Applying preprocessing...")
+        processed_results = preprocess_data(selected_results)
+
     # Combine and split data
     logger.info("Combining and splitting data...")
-    
+
     X_train, X_val, X_test, Y_train, Y_val, Y_test = combine_shuffle_split(processed_results, data_cfg)
-    
-    # Save H5 files
+
+    # Save H5 files (pass the layout so H5 metadata is consistent)
     logger.info("Saving H5 files...")
-    
+
     output_dir = Path(args.output_root) / args.tag
-    save_h5_files(X_train, X_val, X_test, Y_train, Y_val, Y_test, output_dir, samples)
+    h5_layout = (preprocess_cfg.get("feature_layout_extended")
+                 if args.feature_layout == "extended" else None)
+    save_h5_files(X_train, X_val, X_test, Y_train, Y_val, Y_test, output_dir, samples,
+                  feature_layout=h5_layout)
     
     # Generate control plots
     logger.info("Generating control plots...")

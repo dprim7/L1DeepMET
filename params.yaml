@@ -14,7 +14,8 @@ preprocess:
     TT_PU200: 100000
     VBFHToInvisible_PU200: 48000
   
-  # ROOT file variables to load
+  # ROOT file variables to load (LEGACY 9-feature path — still the default
+  # for `dvc repro preprocess`. Used by load_samples_to_numpy().)
   var_list:
     - nL1PuppiCands
     - L1PuppiCands_pt
@@ -30,6 +31,40 @@ preprocess:
     - HGCal3DCl_hoe
     - HGCal3DCl_showerlength
     - HGCal3DCl_coreshowerlength
+
+  # NEW: extended feature layout (Phase 1 of reports/ntuple_pipeline_plan/PLAN.md).
+  # Activated by `preprocess.py --feature-layout extended`. Missing branches
+  # (e.g. on the legacy 25Jul8 ntuples) are zero-filled with a warning.
+  # The ordered list IS the H5 output layout; downstream code reads it from
+  # the H5 attrs.
+  feature_layout_extended:
+    # ─── kinematics (always present)
+    - pt
+    - eta
+    - phi
+    - puppi_weight
+    - px                      # derived: pt × cos(phi)
+    - py                      # derived: pt × sin(phi)
+    - encoded_pdgId           # derived: pdgId → 0-5 lookup
+    - encoded_charge          # derived: charge → 0-3 lookup
+    # ─── vertex association (NEW — the single most discriminating PUPPI input)
+    - z0
+    # ─── FPGA-quantised candidate state (NEW)
+    - hwPt
+    - hwPuppiWeight
+    - hwQual
+    # ─── track quality (NEW; charged candidates)
+    - trackChi2RPhi
+    - trackChi2RZ
+    - trackNStubs
+    - trackMvaQual
+    - caloEta
+    - caloPhi
+    # ─── cluster ID scores (NEW; neutral candidates from HGCal)
+    - clPuId
+    - clEmId
+    - clPt
+    - clEmEt
   
   # MC truth variables
   var_list_mc:

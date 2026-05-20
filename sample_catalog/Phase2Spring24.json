@@ -1,0 +1,101 @@
+{
+  "campaign": "Phase2Spring24",
+  "refreshed_at": "2026-05-20T01:05:11+00:00",
+  "samples": {
+    "TT_PU200": {
+      "dataset": "<local: /ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200>",
+      "files": [
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_0.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_1.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_10.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_11.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_12.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_13.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_14.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_15.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_16.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_17.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_18.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_19.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_2.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_20.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_21.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_22.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_23.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_24.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_3.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_4.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_5.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_6.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_7.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_8.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200/FP/140Xv0/perfNano_12509500_9.root"
+      ],
+      "n_events": 299000,
+      "tier": 1,
+      "target_events": 299000,
+      "doc": "Locally staged in /ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/TT_PU200",
+      "campaign": "Phase2Spring24"
+    },
+    "VBFHToInvisible_PU200": {
+      "dataset": "<local: /ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/VBFHToInvisible_PU200>",
+      "files": [
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/VBFHToInvisible_PU200/FP/140Xv0/perfNano_12509503_0.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/VBFHToInvisible_PU200/FP/140Xv0/perfNano_12509503_1.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/VBFHToInvisible_PU200/FP/140Xv0/perfNano_12509503_2.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/VBFHToInvisible_PU200/FP/140Xv0/perfNano_12509503_3.root",
+        "/ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/VBFHToInvisible_PU200/FP/140Xv0/perfNano_12509503_4.root"
+      ],
+      "n_events": 48000,
+      "tier": 1,
+      "target_events": 48000,
+      "doc": "Locally staged in /ceph/cms/store/user/dprimosc/l1deepmet/25Jul8_140X_v0/VBFHToInvisible_PU200",
+      "campaign": "Phase2Spring24"
+    },
+    "MinBias_PU200": {
+      "dataset": "/dry-run-placeholder/GEN-SIM-DIGI-RAW-MINIAOD",
+      "files": [],
+      "n_events": 0,
+      "tier": 1,
+      "target_events": 50000,
+      "doc": "Pure pileup \u2014 no genuine MET; establishes the false-positive rate floor",
+      "campaign": "Phase2Spring24"
+    },
+    "SingleNeutrino_PU200": {
+      "dataset": "/dry-run-placeholder/GEN-SIM-DIGI-RAW-MINIAOD",
+      "files": [],
+      "n_events": 0,
+      "tier": 1,
+      "target_events": 30000,
+      "doc": "Zero genuine MET \u2014 defines model noise floor",
+      "campaign": "Phase2Spring24"
+    },
+    "WJetsToLNu_PU200": {
+      "dataset": "/dry-run-placeholder/GEN-SIM-DIGI-RAW-MINIAOD",
+      "files": [],
+      "n_events": 0,
+      "tier": 2,
+      "target_events": 100000,
+      "doc": "W \u2192 \u2113\u03bd: broad MET spectrum, both real signal + pileup contributions",
+      "campaign": "Phase2Spring24"
+    },
+    "DYToLL_PU200": {
+      "dataset": "/dry-run-placeholder/GEN-SIM-DIGI-RAW-MINIAOD",
+      "files": [],
+      "n_events": 0,
+      "tier": 2,
+      "target_events": 50000,
+      "doc": "Z + jets, no genuine MET \u2014 control sample for response calibration",
+      "campaign": "Phase2Spring24"
+    },
+    "SMS_T1tttt_PU200": {
+      "dataset": "/dry-run-placeholder/GEN-SIM-DIGI-RAW-MINIAOD",
+      "files": [],
+      "n_events": 0,
+      "tier": 3,
+      "target_events": 50000,
+      "doc": "SUSY high-MET tail \u2014 currently under-represented",
+      "campaign": "Phase2Spring24"
+    }
+  }
+}

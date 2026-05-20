@@ -1,0 +1,64 @@
+--- a/NtupleProducer/python/runPerformanceNTuple.py	2026-05-19 18:01:45.625219819 -0700
++++ b/NtupleProducer/python/runPerformanceNTuple.py	2026-05-19 18:02:23.049023652 -0700
+@@ -826,14 +826,41 @@
+         getattr(process, 'l1tLayer1'+R).pfAlgoParameters.debug = True
+ 
+ def saveCands():
++    # L1DeepMET extended: emit every Layer-2-correlator per-candidate variable
++    # that's plausibly useful for MET reconstruction. The original three
++    # (puppiWeight, pdgId, charge) plus z0/hw* (vertex association and the
++    # FPGA-quantised values), track-quality accessors for charged candidates,
++    # and cluster ID scores for neutral candidates from HGCal.
+     process.l1pfcandTable = cms.EDProducer("L1PFCandTableProducer",
+                                            commonSel = cms.string("pt > 0.0 && abs(eta) < 10.0"),
+                                            cands = cms.PSet(
+                                            ),
+                                            moreVariables = cms.PSet(
++                                               # Original
+                                                puppiWeight = cms.string("puppiWeight"),
+                                                pdgId = cms.string("pdgId"),
+-                                               charge = cms.string("charge")
++                                               charge = cms.string("charge"),
++                                               # NEW — vertex association (THE most discriminating PUPPI input)
++                                               z0 = cms.string("vz"),
++                                               # NEW — FPGA-quantised values (what the L1 actually sees)
++                                               hwPt = cms.string("hwPt"),
++                                               hwEta = cms.string("hwEta"),
++                                               hwPhi = cms.string("hwPhi"),
++                                               hwPuppiWeight = cms.string("hwPuppiWeight"),
++                                               hwQual = cms.string("hwQual"),
++                                               # NEW — track quality (charged candidates)
++                                               trackChi2RPhi = cms.string("? pfTrack.isNonnull ? pfTrack.trackWord.getChi2RPhi : -1"),
++                                               trackChi2RZ   = cms.string("? pfTrack.isNonnull ? pfTrack.trackWord.getChi2RZ : -1"),
++                                               trackChi2Bend = cms.string("? pfTrack.isNonnull ? pfTrack.trackWord.getBendChi2 : -1"),
++                                               trackNStubs   = cms.string("? pfTrack.isNonnull ? pfTrack.trackWord.getNStubs : -1"),
++                                               trackMvaQual  = cms.string("? pfTrack.isNonnull ? pfTrack.trackWord.getMVAQuality : -1"),
++                                               caloEta       = cms.string("? pfTrack.isNonnull ? pfTrack.caloEta : -999"),
++                                               caloPhi       = cms.string("? pfTrack.isNonnull ? pfTrack.caloPhi : -999"),
++                                               # NEW — cluster quality (neutral candidates from HGCal)
++                                               clPuId = cms.string("? pfCluster.isNonnull ? pfCluster.egVsPUMVAOut : -1"),
++                                               clEmId = cms.string("? pfCluster.isNonnull ? pfCluster.egVsPionMVAOut : -1"),
++                                               clPt   = cms.string("? pfCluster.isNonnull ? pfCluster.pt : -1"),
++                                               clEmEt = cms.string("? pfCluster.isNonnull ? pfCluster.emEt : -1"),
+                                            ),
+                                        )
+     monitorPerf("L1PF", "l1tLayer1:PF", saveCands=True)
+@@ -852,3 +879,18 @@
+                                            ),
+                                       )
+     process.p += process.gencandTable
++
++
++# ─── L1DeepMET extended recipe ─────────────────────────────────────────────
++# Activate everything plausibly useful for MET training. Each block is opt-in
++# via a process attribute so this same config still runs vanilla when invoked
++# without the L1DEEPMET_EXTENDED env var.
++import os as _os
++if _os.environ.get("L1DEEPMET_EXTENDED", "1") == "1":
++    saveCands()                   # per-candidate state (extended moreVariables above)
++    saveGenCands()                # gen-level particles for METAllVisible
++    addCTL2Met()                  # Layer-2 correlator MET (the user's framing)
++    # The following helpers are already called unconditionally elsewhere in
++    # the file (addStaMu, addTkEG, addHGCalTPs) — re-calling would double-add.
++    # Leave them as-is; they're already in the default ntuple.
++# ───────────────────────────────────────────────────────────────────────────

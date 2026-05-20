@@ -1,0 +1,4 @@
+[submodule "external/FastPUPPI"]
+	path = external/FastPUPPI
+	url = https://github.com/p2l1pfp/FastPUPPI.git
+	branch = 15_1_X
