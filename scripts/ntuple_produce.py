@@ -1,41 +1,55 @@
 #!/usr/bin/env python3
 """
-Local-worker ntuple production driver for L1DeepMET.
+Local-worker ntuple production driver for L1DeepMET (2-stage cmsRun workflow).
 
-Given a named sample (from `sample_catalog/<campaign>.json`) and an
-event budget, this script:
+Given a named sample (from `sample_catalog/<campaign>.json`) and an event
+budget, each input MINIAOD file is processed through two sequential cmsRun
+invocations:
 
-  1. Resolves the sample → list of MINIAOD input files via the catalog.
-  2. For each input file, spawns a `cmsRun runPerformanceNTuple.py` child
-     with `inputFiles=…&maxEvents=N` such that the total adds up to the
-     requested budget (events-per-file = budget / n_files, rounded up).
-  3. Runs up to `--workers` children in parallel (Python multiprocessing).
-  4. Stages outputs to `/ceph/.../<tag>/<sample>/FP/<campaign_tag>/perfNano_<i>.root`
+  Stage 1 — `cmsRun runInputs131X.py inputFiles=… maxEvents=N outputFile=…`
+            Re-emulates the full L1 chain (track trigger, vertex finder,
+            HGCal TPs, GMT, Layer-1, Layer-2) and writes a fat intermediate
+            ROOT (`inputs131X_<job>.root`) into the scratch dir.
+
+  Stage 2 — `cmsRun runPerformanceNTuple.py inputFiles=file:… outputFile=…`
+            Consumes the intermediate, runs the L1PFCandTableProducer (with
+            our extended saveCands moreVariables) and the rest of the
+            FlatTable producers, writes `perfNano_<job>.root` to the
+            tag-rooted output dir, deletes the intermediate.
+
+Both recipes live in external/FastPUPPI (14_0_X branch); both honour the
+sys.argv-based inputFiles/maxEvents/outputFile overrides added by our
+patch (apply via scripts/apply_ntuple_recipe.sh apply before use).
+
+The script:
+  1. Resolves the sample → list of MINIAOD URLs via the catalog.
+  2. Splits the event budget evenly across files (events-per-file = ceil).
+  3. Runs up to `--workers` jobs in parallel via Python multiprocessing;
+     each worker does its own 2-stage cmsRun.
+  4. Stages outputs to `<output-root>/<tag>/<sample>/FP/<campaign>/perfNano_<i>.root`
      and writes a provenance JSON at `<tag>/<sample>/provenance.json`.
   5. Maintains a per-sample state.json so the run is **resumable** — restart
-     after a crash and only failed/missing children re-run.
+     after a crash and only failed/missing jobs re-run.
 
-This script is NOT a CRAB submitter. It assumes the MINIAOD inputs are
-either locally on /ceph (catalog `add-local` populated them) or reachable
-via XRootD with a valid VOMS proxy. HTCondor support is Phase 3.
+NOT a CRAB submitter. MINIAOD inputs are either locally on /ceph (catalog
+add-local populated them) or reachable via XRootD with a valid VOMS proxy.
+HTCondor support is Phase 3.
+
+Scratch directory for intermediates: $L1DEEPMET_SCRATCH, default
+/tmp/l1deepmet_intermediates. Plan for ~hundreds of MB per concurrent worker.
 
 Usage
 ─────
-  scripts/ntuple_produce.py \\
+  scripts/ntuple_produce.py run \\
       --sample TT_PU200 \\
-      --campaign Phase2Spring24 \\
-      --tag 26May19_150X_extended_v0 \\
+      --campaign Phase2Spring23 \\
+      --tag 26May20_140X_extended_v0 \\
       --n-events 50000 \\
       --output-root /ceph/cms/store/user/dprimosc/l1deepmet \\
-      --workers 4 \\
-      [--dry-run]                # print plan, don't launch cmsRun
-      [--cmssw /path/to/CMSSW_15_1_0_pre4]   # default: read from .env
+      --workers 4
 
-  scripts/ntuple_produce.py status --tag 26May19_150X_extended_v0 \\
+  scripts/ntuple_produce.py status --tag 26May20_140X_extended_v0 \\
       --sample TT_PU200
-
-The cmsRun recipe used is the patched runPerformanceNTuple.py from
-external/FastPUPPI (run `scripts/apply_ntuple_recipe.sh apply` once before).
 """
 from __future__ import annotations
 
@@ -94,8 +108,15 @@ def _patch_applied() -> bool:
         return False
 
 
-def _build_plan(catalog: dict, sample: str, budget: int) -> list[tuple[str, int]]:
-    """Plan = list of (input_file, max_events_for_this_file) summing to `budget`."""
+def _build_plan(catalog: dict, sample: str, budget: int,
+                max_files: int | None = None) -> list[tuple[str, int]]:
+    """Plan = list of (input_file, max_events_for_this_file) summing to `budget`.
+
+    With ``max_files`` set, the plan is truncated to at most that many files;
+    the per-file event budget is divided among the surviving files. Useful
+    for smoke tests where you'd otherwise spread `budget=10` across hundreds
+    of files (10/N rounds up to 1 each, paying N startup costs).
+    """
     rec = catalog["samples"].get(sample)
     if rec is None:
         raise SystemExit(f"{sample!r} not in catalog.")
@@ -105,6 +126,8 @@ def _build_plan(catalog: dict, sample: str, budget: int) -> list[tuple[str, int]
             f"{sample!r} has no files catalogued (placeholder entry). "
             f"Run `ntuple_catalog.py refresh` with grid access, or `add-local` if files exist."
         )
+    if max_files is not None and max_files > 0:
+        files = files[:max_files]
     n_files = len(files)
     per_file = max(1, (budget + n_files - 1) // n_files)  # ceil
     return [(f, per_file) for f in files]
@@ -149,12 +172,16 @@ def _input_url(input_file: str) -> str:
     - ``/store/...`` paths are CMS LFNs — wrap with an XRootD redirector
       (the global US one by default; tunable via env var).
     - Anything else is assumed local and gets the ``file:`` prefix.
+
+    XRootD URL convention is ``root://host//absolute/path`` — the double
+    slash distinguishes absolute paths from relative ones, and the server
+    rejects ``root://host/store/...`` with errno 3010 (relative-path).
     """
     if input_file.startswith("/store/"):
         redirector = os.environ.get(
             "L1DEEPMET_XROOTD_REDIRECTOR", _DEFAULT_XROOTD_REDIRECTOR
         ).rstrip("/")
-        return f"{redirector}/{input_file.lstrip('/')}"
+        return f"{redirector}/{input_file}"   # leading '/' preserved → double slash
     return f"file:{input_file}"
 
 
@@ -263,7 +290,7 @@ def _run_one(args_tuple) -> tuple[str, dict]:
 
 def cmd_run(args) -> None:
     catalog = _load_catalog(args.campaign)
-    plan = _build_plan(catalog, args.sample, args.n_events)
+    plan = _build_plan(catalog, args.sample, args.n_events, max_files=args.max_files)
 
     tag_root = Path(args.output_root) / args.tag
     out_dir = tag_root / args.sample / "FP" / catalog["campaign"]
@@ -361,6 +388,8 @@ def main():
     p.add_argument("--n-events", type=int, required=True)
     p.add_argument("--output-root", default="/ceph/cms/store/user/dprimosc/l1deepmet")
     p.add_argument("--workers", type=int, default=4)
+    p.add_argument("--max-files", type=int, default=None,
+                   help="Cap the plan to this many input files (smoke test).")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_run)
 

@@ -9,10 +9,20 @@ preprocess:
   output_dir: "data/preprocessed"
   plot_dir: "outputs/preprocessing_plots"
 
-  # Sample configuration with desired event counts
+  # Sample configuration with desired event counts.
+  # Tuned for the new Phase2Spring23 extended production (5 samples). For
+  # legacy 25Jul8 preprocessing (which only has TT + VBFHToInvisible locally),
+  # uncomment the legacy block below and comment out the extended one — or
+  # pass --data-root pointing at a dir with only the samples you list here.
   samples:
-    TT_PU200: 100000
-    VBFHToInvisible_PU200: 48000
+    TT_PU200: 200000
+    VBFHToInvisible_PU200: 80000
+    MinBias_PU200: 50000
+    WJetsToLNu_PU200: 100000
+    DYToLL_PU200: 50000
+  # samples:                # legacy 25Jul8
+  #   TT_PU200: 100000
+  #   VBFHToInvisible_PU200: 48000
   
   # ROOT file variables to load (LEGACY 9-feature path — still the default
   # for `dvc repro preprocess`. Used by load_samples_to_numpy().)
