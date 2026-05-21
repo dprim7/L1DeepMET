@@ -33,6 +33,7 @@ from l1deepmet.data.preprocessing import (
     select_events,
     preprocess_data,
     combine_shuffle_split,
+    combine_shuffle_split_extended,
     save_h5_files,
     coerce_encoding
 )
@@ -146,19 +147,27 @@ def main():
                 "feature_layout=extended requested but params.yaml has no "
                 "`preprocess.feature_layout_extended` list."
             )
+        # Event-level layout is optional — if absent, the extended path still
+        # works but only per-candidate features are saved (event_features
+        # column will be (n_events, 0) and skipped in the H5).
+        event_feature_layout = preprocess_cfg.get("event_feature_layout") or []
         results = load_samples_to_numpy_extended(
             data_root=data_root,
             sample_names=sample_names,
             feature_layout=feature_layout,
             var_list_mc=var_list_mc,
+            event_feature_layout=event_feature_layout,
             max_pf=max_pf,
             encoding=encoding,
             include_mc=include_mc,
             step_size="100 MB",
             dtype=np.float32,
         )
-        logger.info(f"Extended layout produced {len(feature_layout)} features per particle: {feature_layout}")
+        logger.info(f"Extended layout produced {len(feature_layout)} per-candidate features: {feature_layout}")
+        if event_feature_layout:
+            logger.info(f"Extended layout produced {len(event_feature_layout)} event-level features: {event_feature_layout}")
     else:
+        event_feature_layout = []
         results = load_samples_to_numpy(
             data_root=data_root,
             sample_names=sample_names,
@@ -186,19 +195,29 @@ def main():
         logger.info("Applying preprocessing...")
         processed_results = preprocess_data(selected_results)
 
-    # Combine and split data
+    # Combine and split data — the extended path threads event_features alongside
+    # X/Y, the legacy path doesn't have them.
     logger.info("Combining and splitting data...")
 
-    X_train, X_val, X_test, Y_train, Y_val, Y_test = combine_shuffle_split(processed_results, data_cfg)
-
-    # Save H5 files (pass the layout so H5 metadata is consistent)
-    logger.info("Saving H5 files...")
-
     output_dir = Path(args.output_root) / args.tag
-    h5_layout = (preprocess_cfg.get("feature_layout_extended")
-                 if args.feature_layout == "extended" else None)
-    save_h5_files(X_train, X_val, X_test, Y_train, Y_val, Y_test, output_dir, samples,
-                  feature_layout=h5_layout)
+    if args.feature_layout == "extended":
+        (X_train, X_val, X_test,
+         EX_train, EX_val, EX_test,
+         Y_train, Y_val, Y_test) = combine_shuffle_split_extended(processed_results, data_cfg)
+        logger.info("Saving H5 files (with event_features)...")
+        save_h5_files(
+            X_train, X_val, X_test, Y_train, Y_val, Y_test, output_dir, samples,
+            feature_layout=preprocess_cfg.get("feature_layout_extended"),
+            event_features_train=EX_train,
+            event_features_val=EX_val,
+            event_features_test=EX_test,
+            event_feature_layout=event_feature_layout,
+        )
+    else:
+        X_train, X_val, X_test, Y_train, Y_val, Y_test = combine_shuffle_split(processed_results, data_cfg)
+        logger.info("Saving H5 files...")
+        save_h5_files(X_train, X_val, X_test, Y_train, Y_val, Y_test, output_dir, samples,
+                      feature_layout=None)
     
     # Generate control plots
     logger.info("Generating control plots...")
@@ -207,7 +226,14 @@ def main():
     plot_dir.mkdir(parents=True, exist_ok=True)
     
     try:
-        control_plots(processed_results, plot_dir)
+        # control_plots unpacks (features, targets); strip event_features if
+        # the extended path produced a 3-tuple so the legacy plotting code
+        # still works unchanged.
+        control_plot_results = {
+            name: (payload[0], payload[-1])
+            for name, payload in processed_results.items()
+        }
+        control_plots(control_plot_results, plot_dir)
         logger.info(f"Control plots saved to {plot_dir}")
     except Exception as e:
         logger.warning(f"Control plots failed: {e}")

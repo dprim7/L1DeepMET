@@ -47,15 +47,20 @@ preprocess:
     - py                      # derived: pt × sin(phi)
     - encoded_pdgId           # derived: pdgId → 0-5 lookup
     - encoded_charge          # derived: charge → 0-3 lookup
+    # ─── impact parameter (was loaded by legacy, never exposed as feature)
+    - dxyErr
     # ─── vertex association (NEW — the single most discriminating PUPPI input)
     - z0
     # ─── FPGA-quantised candidate state (NEW)
     - hwPt
+    - hwEta
+    - hwPhi
     - hwPuppiWeight
     - hwQual
     # ─── track quality (NEW; charged candidates)
     - trackChi2RPhi
     - trackChi2RZ
+    - trackChi2Bend
     - trackNStubs
     - trackMvaQual
     - caloEta
@@ -65,6 +70,30 @@ preprocess:
     - clEmId
     - clPt
     - clEmEt
+
+  # NEW: event-level (per-event scalar) features. Saved as a separate
+  # `event_features` H5 dataset of shape (N_events, len(event_feature_layout)).
+  # Each entry maps to either a scalar ROOT branch or the leading element
+  # of a jagged ROOT branch. Missing branches are zero-filled with a warning.
+  event_feature_layout:
+    # ─── alternative MET algorithms (always present in legacy + new ntuples)
+    - puppi_met_pt              # L1PuppiMet_pt — the baseline the model corrects
+    - puppi_met_phi
+    - puppi_met_central_pt      # |η| < 2.4
+    - puppi_met_central_phi
+    - pf_met_pt                 # L1PFMet_pt — pre-PUPPI Particle Flow MET
+    - pf_met_phi
+    - calo_met_pt               # L1CaloMet_pt — calo-only MET
+    - calo_met_phi
+    - tk_met_pt                 # L1TKMet_pt — track-only MET
+    - tk_met_phi
+    # ─── Layer-2 correlator MET (NEW — from patch's addCTL2Met)
+    - layer2_met_pt             # L1Layer2Met_pt — CTL2 MET, the user's framing
+    - layer2_met_phi
+    # ─── L1 primary vertex (NEW — from patch's VertexWordFlatTableProducer)
+    - lead_vtx_z0               # L1Vtx_z0[0] — leading vertex z position
+    - lead_vtx_sumpt            # L1Vtx_sumPt[0] — leading vertex sum pt
+    - n_vtx                     # nL1Vtx — number of reconstructed vertices
   
   # MC truth variables
   var_list_mc:

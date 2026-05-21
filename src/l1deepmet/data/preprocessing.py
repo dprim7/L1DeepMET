@@ -18,6 +18,88 @@ from l1deepmet.utils import to_np_array
 logger = logging.getLogger(__name__)
 
 
+# ─── Event-level feature catalogue ─────────────────────────────────────────
+# Maps a clean feature name (used in params.yaml::event_feature_layout) to
+# (ROOT branch name, aggregation mode). Aggregation modes:
+#   - "scalar": branch is already one value per event (e.g. L1PuppiMet_pt
+#               from a singleton FlatTable, or nL1Vtx count).
+#   - "first":  branch is jagged (e.g. L1Vtx_z0 with multiple vertices/event);
+#               take the leading entry per event, default 0.0 for empty rows.
+#
+# Adding a new feature here AND in params.yaml::preprocess.event_feature_layout
+# is enough to surface it as an extra column in the H5 `event_features`
+# dataset. Branches missing from the input ROOT file are zero-filled with a
+# logged warning (mirrors _existing_branches/_safe_get for per-candidate).
+EVENT_FEATURE_BRANCHES: Dict[str, Tuple[str, str]] = {
+    # alternative MET algorithms (present in legacy + new ntuples)
+    "puppi_met_pt":          ("L1PuppiMet_pt",         "scalar"),
+    "puppi_met_phi":         ("L1PuppiMet_phi",        "scalar"),
+    "puppi_met_central_pt":  ("L1PuppiMetCentral_pt",  "scalar"),
+    "puppi_met_central_phi": ("L1PuppiMetCentral_phi", "scalar"),
+    "pf_met_pt":             ("L1PFMet_pt",            "scalar"),
+    "pf_met_phi":            ("L1PFMet_phi",           "scalar"),
+    "calo_met_pt":           ("L1CaloMet_pt",          "scalar"),
+    "calo_met_phi":          ("L1CaloMet_phi",         "scalar"),
+    "tk_met_pt":             ("L1TKMet_pt",            "scalar"),
+    "tk_met_phi":            ("L1TKMet_phi",           "scalar"),
+    # Layer-2 correlator MET (NEW — from patched runPerformanceNTuple.py)
+    "layer2_met_pt":         ("L1Layer2Met_pt",        "scalar"),
+    "layer2_met_phi":        ("L1Layer2Met_phi",       "scalar"),
+    # L1 primary vertices (NEW — from patched VertexWordFlatTableProducer)
+    "lead_vtx_z0":           ("L1Vtx_z0",              "first"),
+    "lead_vtx_sumpt":        ("L1Vtx_sumPt",           "first"),
+    "n_vtx":                 ("nL1Vtx",                "scalar"),
+}
+
+
+def _load_event_field(field, agg: str = "scalar", default: float = 0.0) -> np.ndarray:
+    """Extract per-event values from an awkward field as a (n_events,) np.float32 array.
+
+    agg='scalar': field is already per-event (shape (n_events,)). Pass through.
+    agg='first':  field is jagged var-length per row. Take [0] of each row;
+                  rows with zero entries fall back to ``default``.
+    """
+    if agg == "scalar":
+        return np.asarray(field).astype(np.float32)
+    if agg == "first":
+        padded = ak.pad_none(field, 1, clip=True)
+        filled = ak.fill_none(padded, default)
+        return np.asarray(filled[:, 0]).astype(np.float32)
+    raise ValueError(
+        f"Unknown agg mode: {agg!r}. Expected 'scalar' or 'first'."
+    )
+
+
+def event_features_from_arrays(
+    arrays,
+    event_feature_layout: List[str],
+    n_events: int,
+    *,
+    dtype=np.float32,
+) -> np.ndarray:
+    """Build a (n_events, len(event_feature_layout)) array from one uproot
+    iterate batch.
+
+    Each feature is looked up in EVENT_FEATURE_BRANCHES; missing ROOT branches
+    are silently zero-filled (the caller logs once at file-open time via
+    _existing_branches). Unknown feature names raise ValueError — this is a
+    configuration error, not a data-quality issue.
+    """
+    fields_available = set(getattr(arrays, "fields", ()))
+    out = np.zeros((n_events, len(event_feature_layout)), dtype=dtype)
+    for j, feat in enumerate(event_feature_layout):
+        if feat not in EVENT_FEATURE_BRANCHES:
+            raise ValueError(
+                f"Unknown event feature: {feat!r}. "
+                f"Add it to EVENT_FEATURE_BRANCHES in preprocessing.py."
+            )
+        branch, agg = EVENT_FEATURE_BRANCHES[feat]
+        if branch not in fields_available:
+            continue  # zero-fill
+        out[:, j] = _load_event_field(arrays[branch], agg=agg, default=0.0)
+    return out
+
+
 def _existing_branches(files_with_tree: List[str], wanted: List[str]) -> List[str]:
     """Filter `wanted` down to branches that actually exist in the first ROOT file.
 
@@ -210,6 +292,7 @@ def load_samples_to_numpy_extended(
     sample_names: List[str],
     feature_layout: List[str],
     var_list_mc: Optional[List[str]] = None,
+    event_feature_layout: Optional[List[str]] = None,
     *,
     max_pf: int,
     encoding: Dict[str, Dict[float, int]],
@@ -218,15 +301,20 @@ def load_samples_to_numpy_extended(
     file_pattern: str = "*.root",
     tree_name: str = "Events",
     dtype=np.float32,
-) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
-    """Extended preprocessor: load arbitrary candidate-level branches.
+) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Extended preprocessor: load per-candidate AND per-event branches.
 
-    Unlike ``load_samples_to_numpy`` (which is hardcoded to 9 features), this
-    function takes a *declarative* ``feature_layout`` — an ordered list of
-    feature names — and produces a ``(n_events, max_pf, len(feature_layout))``
-    array where each slot is either a direct branch load or a derived feature.
+    Returns ``{sample_name: (features, event_features, targets)}`` where:
+      - ``features``       has shape (n_events, max_pf, len(feature_layout))
+      - ``event_features`` has shape (n_events, len(event_feature_layout))
+        — shape (n_events, 0) when ``event_feature_layout`` is None/empty.
+      - ``targets``        has shape (n_events, 2) — gen MET (px, py).
 
-    Supported feature names (controlled by the L1DeepMET extended recipe):
+    The per-candidate ``feature_layout`` is a declarative ordered list of
+    feature names (vs the hardcoded 9-feature legacy path). Each slot is
+    either a direct branch load or a derived feature.
+
+    Supported candidate features (controlled by the L1DeepMET extended recipe):
 
       Direct branches (loaded as-is from L1PuppiCands_<name>):
         pt, eta, phi, puppiWeight, dxyErr, mass, z0,
@@ -239,6 +327,8 @@ def load_samples_to_numpy_extended(
         py         = pt × sin(phi)
         encoded_pdgId  (via `encoding["L1PuppiCands_pdgId"]`)
         encoded_charge (via `encoding["L1PuppiCands_charge"]`)
+
+    Supported event features: see EVENT_FEATURE_BRANCHES (module-level dict).
 
     Missing branches are zero-filled with a logged warning (see _existing_branches).
     Pad value for each direct branch is 0.0 unless special-cased (pdgId/charge get
@@ -296,6 +386,16 @@ def load_samples_to_numpy_extended(
             "HGCal3DCl_firstHcal3layers",
             "HGCal3DCl_firstHcal5layers",
         ]
+    # Event-level branches (from EVENT_FEATURE_BRANCHES) — unknown event
+    # features raise here rather than later for clearer error messages.
+    event_layout = list(event_feature_layout or [])
+    for feat in event_layout:
+        if feat not in EVENT_FEATURE_BRANCHES:
+            raise ValueError(
+                f"Unknown event feature: {feat!r}. "
+                f"Add it to EVENT_FEATURE_BRANCHES in preprocessing.py."
+            )
+        wanted.append(EVENT_FEATURE_BRANCHES[feat][0])
     # de-dup, preserve order
     seen: set[str] = set()
     wanted = [b for b in wanted if not (b in seen or seen.add(b))]
@@ -303,7 +403,10 @@ def load_samples_to_numpy_extended(
         wanted += list(var_list_mc)
 
     n_features = len(feature_layout)
-    logger.info(f"Extended preprocessor: {n_features} features from layout {feature_layout}")
+    n_event_features = len(event_layout)
+    logger.info(f"Extended preprocessor: {n_features} per-candidate features from layout {feature_layout}")
+    if n_event_features:
+        logger.info(f"Extended preprocessor: {n_event_features} event-level features from layout {event_layout}")
 
     for i, sample in enumerate(sample_names, 1):
         logger.info(f"[{i}/{len(sample_names)}] Processing sample: {sample}")
@@ -316,6 +419,7 @@ def load_samples_to_numpy_extended(
         branches = _existing_branches(files_with_tree, wanted)
 
         X_parts: List[np.ndarray] = []
+        EX_parts: List[np.ndarray] = []
         Y_parts: List[np.ndarray] = []
         ref_branch = "L1PuppiCands_pt"  # always present; used for zero-fallback shape
 
@@ -375,51 +479,50 @@ def load_samples_to_numpy_extended(
             else:
                 Y = np.zeros((nevents, 2), dtype=dtype)
 
+            # Event-level features (may be empty if event_layout is empty)
+            EX = event_features_from_arrays(arrays, event_layout, nevents, dtype=dtype)
+
             X_parts.append(X)
+            EX_parts.append(EX)
             Y_parts.append(Y)
 
         features = np.concatenate(X_parts, axis=0) if X_parts else np.zeros((0, max_pf, n_features), dtype=dtype)
+        event_features = np.concatenate(EX_parts, axis=0) if EX_parts else np.zeros((0, n_event_features), dtype=dtype)
         targets = np.concatenate(Y_parts, axis=0) if Y_parts else np.zeros((0, 2), dtype=dtype)
-        results[sample] = (features, targets)
-        logger.info(f"Sample '{sample}' complete: {features.shape[0]} events, shape {features.shape}")
+        results[sample] = (features, event_features, targets)
+        logger.info(
+            f"Sample '{sample}' complete: {features.shape[0]} events, "
+            f"candidate shape {features.shape}, event-feature shape {event_features.shape}"
+        )
 
     return results
 
 
-def select_events(results: Dict[str, Tuple[np.ndarray, np.ndarray]],
-                  samples: Dict[str, int]) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
-    """
-    Select desired number of events per sample.
-    
-    Args:
-        results: Dict with sample_name -> (features, targets) 
-        samples: Dict with sample_name -> n_desired_events
-        
-    Returns:
-        selected_results: Dict with sample_name -> (selected_features, selected_targets)
+def select_events(results: Dict[str, Tuple[np.ndarray, ...]],
+                  samples: Dict[str, int]) -> Dict[str, Tuple[np.ndarray, ...]]:
+    """Select desired number of events per sample.
+
+    Tuple-length-agnostic: works for the legacy (features, targets) 2-tuple
+    AND the extended (features, event_features, targets) 3-tuple alike.
+    All arrays in the tuple are sliced with the same event indices.
     """
     logger.info("Selecting desired number of events per sample")
 
-    selected_results = {}
-    for sample_name, (features, targets) in results.items():
+    selected_results: Dict[str, Tuple[np.ndarray, ...]] = {}
+    for sample_name, payload in results.items():
         n_desired = samples[sample_name]
-        n_available = features.shape[0]
-        
+        n_available = payload[0].shape[0]
+
         if n_available >= n_desired:
-            # Randomly select n_desired events
             indices = np.random.choice(n_available, size=n_desired, replace=False)
-            selected_features = features[indices]
-            selected_targets = targets[indices]
+            selected = tuple(arr[indices] for arr in payload)
             logger.info(f"{sample_name}: Selected {n_desired} events from {n_available} available")
         else:
-            # Use all available events if we don't have enough
-            selected_features = features
-            selected_targets = targets
+            selected = payload
             logger.warning(f"{sample_name}: Only {n_available} events available, requested {n_desired}")
-        
-        selected_results[sample_name] = (selected_features, selected_targets)
-        print(f"{sample_name}")
-        print(selected_features.shape)
+
+        selected_results[sample_name] = selected
+        logger.info(f"{sample_name} feature shape: {selected[0].shape}")
     return selected_results
 
 
@@ -557,10 +660,77 @@ def combine_shuffle_split(processed_results: Dict[str, Tuple[np.ndarray, np.ndar
     return X_train, X_val, X_test, Y_train, Y_val, Y_test
 
 
+def combine_shuffle_split_extended(
+    processed_results: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
+    data_cfg: Dict[str, Any],
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray,
+           np.ndarray, np.ndarray, np.ndarray,
+           np.ndarray, np.ndarray, np.ndarray]:
+    """Variant of combine_shuffle_split for the extended preprocessor.
+
+    Input:  {sample: (features, event_features, targets)}  — 3-tuple per sample.
+    Output: (X_train, X_val, X_test,
+             EX_train, EX_val, EX_test,
+             Y_train, Y_val, Y_test)
+
+    Same shuffle seed (42) and split ratios as combine_shuffle_split; all three
+    arrays for a given event share the same shuffled index so per-candidate,
+    per-event, and target rows stay aligned.
+    """
+    logger.info("Combining samples and creating train/val/test splits (extended path)")
+
+    all_features: List[np.ndarray] = []
+    all_event_features: List[np.ndarray] = []
+    all_targets: List[np.ndarray] = []
+    for sample_name, (features, event_features, targets) in processed_results.items():
+        logger.info(f"Adding {sample_name}: {features.shape[0]} events")
+        all_features.append(features)
+        all_event_features.append(event_features)
+        all_targets.append(targets)
+
+    X_combined = np.concatenate(all_features, axis=0)
+    EX_combined = np.concatenate(all_event_features, axis=0)
+    Y_combined = np.concatenate(all_targets, axis=0)
+    logger.info(
+        f"Combined dataset: {X_combined.shape[0]} total events, "
+        f"X {X_combined.shape}, EX {EX_combined.shape}, Y {Y_combined.shape}"
+    )
+
+    np.random.seed(42)
+    indices = np.arange(len(X_combined))
+    np.random.shuffle(indices)
+    X_combined = X_combined[indices]
+    EX_combined = EX_combined[indices]
+    Y_combined = Y_combined[indices]
+
+    split_config = data_cfg["train-val-test-split"]
+    train_ratio = split_config["train"]
+    val_ratio = split_config["val"]
+    test_ratio = split_config["test"]
+
+    train_split = int(train_ratio * len(X_combined))
+    val_split = int((train_ratio + val_ratio) * len(X_combined))
+
+    X_train,  Y_train,  EX_train = X_combined[:train_split],          Y_combined[:train_split],          EX_combined[:train_split]
+    X_val,    Y_val,    EX_val   = X_combined[train_split:val_split], Y_combined[train_split:val_split], EX_combined[train_split:val_split]
+    X_test,   Y_test,   EX_test  = X_combined[val_split:],            Y_combined[val_split:],            EX_combined[val_split:]
+
+    logger.info(f"Train split: {X_train.shape[0]} events ({train_ratio:.1%})")
+    logger.info(f"Val split:   {X_val.shape[0]} events ({val_ratio:.1%})")
+    logger.info(f"Test split:  {X_test.shape[0]} events ({test_ratio:.1%})")
+
+    return X_train, X_val, X_test, EX_train, EX_val, EX_test, Y_train, Y_val, Y_test
+
+
 def save_h5_files(X_train: np.ndarray, X_val: np.ndarray, X_test: np.ndarray,
                   Y_train: np.ndarray, Y_val: np.ndarray, Y_test: np.ndarray,
                   output_dir: Union[str, Path], samples: Dict[str, int],
-                  feature_layout: Optional[List[str]] = None) -> None:
+                  feature_layout: Optional[List[str]] = None,
+                  *,
+                  event_features_train: Optional[np.ndarray] = None,
+                  event_features_val: Optional[np.ndarray] = None,
+                  event_features_test: Optional[np.ndarray] = None,
+                  event_feature_layout: Optional[List[str]] = None) -> None:
     """Save preprocessed data to train/val/test H5 files with metadata.
 
     Args:
@@ -587,55 +757,58 @@ def save_h5_files(X_train: np.ndarray, X_val: np.ndarray, X_test: np.ndarray,
             f"({X_train.shape[2]}). H5 metadata will be inconsistent."
         )
     # Metadata to save in each file
-    metadata = {
+    metadata: Dict[str, Any] = {
         'feature_layout': layout,
         'n_features': X_train.shape[2],
         'max_puppi_candidates': X_train.shape[1],
         'samples_used': list(samples.keys()),
         'sample_event_counts': list(samples.values())
     }
+    # Event-level metadata (only when the extended preprocessor passes
+    # event_features through). Adding even an empty layout would create
+    # a confusing zero-width event_features dataset, so guard on layout
+    # length AND the train array being non-None.
+    has_event_features = (
+        event_feature_layout is not None
+        and len(event_feature_layout) > 0
+        and event_features_train is not None
+    )
+    if has_event_features:
+        metadata['event_feature_layout'] = list(event_feature_layout)
+        metadata['n_event_features'] = event_features_train.shape[1]
+        if event_features_train.shape[1] != len(event_feature_layout):
+            logger.warning(
+                f"event_feature_layout length ({len(event_feature_layout)}) doesn't "
+                f"match EX last-axis ({event_features_train.shape[1]}). H5 metadata "
+                f"will be inconsistent."
+            )
 
-    # Save training data
+    def _write_split(path: Path, X: np.ndarray, Y: np.ndarray,
+                     EX: Optional[np.ndarray], split_label: str) -> None:
+        with h5py.File(path, 'w') as f:
+            f.create_dataset('features', data=X, compression='gzip', compression_opts=9)
+            f.create_dataset('targets', data=Y, compression='gzip', compression_opts=9)
+            if has_event_features and EX is not None:
+                f.create_dataset('event_features', data=EX,
+                                 compression='gzip', compression_opts=9)
+            for key, value in metadata.items():
+                f.attrs[key] = value
+        logger.info(f"{split_label} data saved to {path}")
+        size_mb = path.stat().st_size / 1024**2
+        if has_event_features and EX is not None:
+            logger.info(
+                f"  Shape: features {X.shape}, event_features {EX.shape}, targets {Y.shape}"
+            )
+        else:
+            logger.info(f"  Shape: features {X.shape}, targets {Y.shape}")
+        logger.info(f"  File size: {size_mb:.1f} MB")
+
     train_file_path = output_dir / "train.h5"
-    with h5py.File(train_file_path, 'w') as f:
-        f.create_dataset('features', data=X_train, compression='gzip', compression_opts=9)
-        f.create_dataset('targets', data=Y_train, compression='gzip', compression_opts=9)
-        
-        # Save metadata as attributes
-        for key, value in metadata.items():
-            f.attrs[key] = value
-
-    logger.info(f"Training data saved to {train_file_path}")
-    logger.info(f"  Shape: features {X_train.shape}, targets {Y_train.shape}")
-    logger.info(f"  File size: {train_file_path.stat().st_size / 1024**2:.1f} MB")
-
-    # Save validation data
-    val_file_path = output_dir / "val.h5"
-    with h5py.File(val_file_path, 'w') as f:
-        f.create_dataset('features', data=X_val, compression='gzip', compression_opts=9)
-        f.create_dataset('targets', data=Y_val, compression='gzip', compression_opts=9)
-        
-        # Save metadata as attributes
-        for key, value in metadata.items():
-            f.attrs[key] = value
-
-    logger.info(f"Validation data saved to {val_file_path}")
-    logger.info(f"  Shape: features {X_val.shape}, targets {Y_val.shape}")
-    logger.info(f"  File size: {val_file_path.stat().st_size / 1024**2:.1f} MB")
-
-    # Save test data
-    test_file_path = output_dir / "test.h5"
-    with h5py.File(test_file_path, 'w') as f:
-        f.create_dataset('features', data=X_test, compression='gzip', compression_opts=9)
-        f.create_dataset('targets', data=Y_test, compression='gzip', compression_opts=9)
-        
-        # Save metadata as attributes
-        for key, value in metadata.items():
-            f.attrs[key] = value
-
-    logger.info(f"Test data saved to {test_file_path}")
-    logger.info(f"  Shape: features {X_test.shape}, targets {Y_test.shape}")
-    logger.info(f"  File size: {test_file_path.stat().st_size / 1024**2:.1f} MB")
+    val_file_path   = output_dir / "val.h5"
+    test_file_path  = output_dir / "test.h5"
+    _write_split(train_file_path, X_train, Y_train, event_features_train, "Training")
+    _write_split(val_file_path,   X_val,   Y_val,   event_features_val,   "Validation")
+    _write_split(test_file_path,  X_test,  Y_test,  event_features_test,  "Test")
 
     # Summary
     total_size = (train_file_path.stat().st_size + val_file_path.stat().st_size + 
