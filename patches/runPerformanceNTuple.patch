@@ -1,8 +1,10 @@
---- a/NtupleProducer/python/runPerformanceNTuple.py	2026-05-19 18:01:45.625219819 -0700
-+++ b/NtupleProducer/python/runPerformanceNTuple.py	2026-05-19 18:02:23.049023652 -0700
-@@ -826,14 +826,41 @@
+diff --git a/NtupleProducer/python/runPerformanceNTuple.py b/NtupleProducer/python/runPerformanceNTuple.py
+index 4dc42b7..3b69c2a 100644
+--- a/NtupleProducer/python/runPerformanceNTuple.py
++++ b/NtupleProducer/python/runPerformanceNTuple.py
+@@ -826,14 +826,41 @@ if False:
          getattr(process, 'l1tLayer1'+R).pfAlgoParameters.debug = True
-
+ 
  def saveCands():
 +    # L1DeepMET extended: emit every Layer-2-correlator per-candidate variable
 +    # that's plausibly useful for MET reconstruction. The original three
@@ -43,7 +45,7 @@
                                             ),
                                         )
      monitorPerf("L1PF", "l1tLayer1:PF", saveCands=True)
-@@ -852,3 +879,38 @@
+@@ -852,3 +879,57 @@ def saveGenCands():
                                             ),
                                        )
      process.p += process.gencandTable
@@ -82,4 +84,22 @@
 +    process.p += process.l1deepmetVtxTable
 +    # addStaMu, addTkEG, addHGCalTPs are already called unconditionally
 +    # elsewhere in the file — re-calling would double-add.
++
++# Universal CLI overrides for the producer (always active — works with or
++# without L1DEEPMET_EXTENDED). Lets scripts/ntuple_produce.py invoke us as
++#   cmsRun runPerformanceNTuple.py \
++#       inputFiles=root://.../store/.../foo.root \
++#       maxEvents=1000 \
++#       outputFile=perfNano_0001.root
++# Without these overrides cmsRun silently uses the hardcoded placeholder
++# `inputs125X.root` at the top of this file and ignores the CLI args.
++from FWCore.ParameterSet.VarParsing import VarParsing as _L1DMetVarParsing
++_l1dmet_cli = _L1DMetVarParsing("analysis")
++_l1dmet_cli.parseArguments()
++if _l1dmet_cli.inputFiles:
++    process.source.fileNames = cms.untracked.vstring(_l1dmet_cli.inputFiles)
++if _l1dmet_cli.maxEvents != -1:
++    process.maxEvents.input = cms.untracked.int32(_l1dmet_cli.maxEvents)
++if _l1dmet_cli.outputFile:
++    process.TFileService.fileName = cms.string(_l1dmet_cli.outputFile)
 +# ───────────────────────────────────────────────────────────────────────────

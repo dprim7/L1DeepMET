@@ -171,10 +171,15 @@ def cmd_refresh(args) -> None:
             # Use most recent (DAS returns sorted by site; we take last)
             dataset = datasets[-1]
             files = _das_query(f"file dataset={dataset}")
+            # `dasgoclient --query "file dataset=X | grep file.nevents"` returns
+            # one line per file containing JUST the integer event count (with
+            # trailing whitespace). The earlier `line.split()[1]` parser
+            # assumed "<file> <nevents>" and crashed with IndexError on the
+            # bare-int form.
             n_events = sum(
-                int(line.split()[1])
+                int(line.strip())
                 for line in _das_query(f"file dataset={dataset} | grep file.nevents")
-                if line.split() and line.split()[1].isdigit()
+                if line.strip().isdigit()
             ) if files else 0
             datasets = [dataset]
             print(f"  → {len(files)} files, {n_events:,} events", flush=True)

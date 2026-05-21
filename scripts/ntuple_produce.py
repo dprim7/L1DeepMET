@@ -131,6 +131,28 @@ def _job_id(input_file: str, idx: int) -> str:
     return f"{idx:04d}_{base}"
 
 
+# XRootD redirector for /store/ LFNs that aren't on the local file system.
+# Override with $L1DEEPMET_XROOTD_REDIRECTOR to use a closer one (e.g. UCSD
+# T2's redirector.t2.ucsd.edu, or root://xcache-redirector.t2.ucsd.edu/ for
+# the caching layer).
+_DEFAULT_XROOTD_REDIRECTOR = "root://cmsxrootd.fnal.gov/"
+
+
+def _input_url(input_file: str) -> str:
+    """Build a cmsRun-friendly URL from a catalog entry.
+
+    - ``/store/...`` paths are CMS LFNs — wrap with an XRootD redirector
+      (the global US one by default; tunable via env var).
+    - Anything else is assumed local and gets the ``file:`` prefix.
+    """
+    if input_file.startswith("/store/"):
+        redirector = os.environ.get(
+            "L1DEEPMET_XROOTD_REDIRECTOR", _DEFAULT_XROOTD_REDIRECTOR
+        ).rstrip("/")
+        return f"{redirector}/{input_file.lstrip('/')}"
+    return f"file:{input_file}"
+
+
 def _run_one(args_tuple) -> tuple[str, dict]:
     """Worker: cmsRun one input → one perfNano output. Returns (job_id, result)."""
     job_id, input_file, max_events, output_dir, recipe_path = args_tuple
@@ -141,7 +163,7 @@ def _run_one(args_tuple) -> tuple[str, dict]:
     # cmsRun command: pass inputFiles + maxEvents on the command line.
     cmd = [
         "cmsRun", str(recipe_path),
-        f"inputFiles=file:{input_file}",
+        f"inputFiles={_input_url(input_file)}",
         f"maxEvents={max_events}",
         f"outputFile={out_file}",
     ]
