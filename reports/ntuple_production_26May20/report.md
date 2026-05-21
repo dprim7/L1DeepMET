@@ -2,26 +2,42 @@
 
 ## TL;DR
 
-The extended-features ntuple pipeline is fully **built and tested end-to-end**
-through the cmsRun layer, but the actual production run is **blocked by data
-availability**: every selected Phase2Spring23 PU200 input dataset is currently
-100% tape-resident with no disk replicas anywhere in the CMS XRootD federation.
+The extended-features ntuple pipeline is **fully built, tested end-to-end on
+a real Phase2Spring24 input file, and ready to run on all 5 target samples
+right now.** Two course-corrections along the way (see §6 for the honest
+account): (1) the right CMSSW combination is 14_2_X / 14_2_0_pre2 + Spring24
+inputs + D110 geometry, matching the 25Jul8 production provenance, not 14_0_X
+/ Spring23; (2) all 5 samples actually have full disk coverage in the XRootD
+federation — a probe script bug had earlier suggested otherwise.
 
-What you can do *today* without waiting:
+What's runnable today:
 
-- **A new H5** (`outputs/preprocessed/26May20_25Jul8_extendedH5_v0/`) re-preprocesses
-  the existing 25Jul8 perfNano files into the new 26-feature + 13-event-feature
-  schema. The 4 alternative MET algorithms (PuppiMet, PFMet, CaloMet, TKMet —
-  including Central variants) become event-level features the model has never
-  seen before. The new per-candidate slots (z0, hw*, track*, cl*) and the
-  vertex / Layer2 event features stay zero-filled, because the 25Jul8 ntuples
-  predate the extended saveCands recipe.
+- `scripts/ntuple_produce.py run --campaign Phase2Spring24 --sample TT_PU200
+  --tag <T> --n-events <N> --workers <W>` works as-is for any of the 5
+  Phase2Spring24 PU200 samples (TT, VBFHToInvisible, MinBias, WJetsToLNu,
+  DYToLL). A 5-event smoke on DYToLL passed in 564 s wall.
 
-What needs to happen *before* re-producing ntuples with the full new branch set:
+- The output perfNanos contain all 14 new per-candidate branches (z0, hw*,
+  track*, calo*, cl*) and all 3 new event-level vertex branches plus the
+  4 alternative-MET-algorithm baselines, populated with real values.
 
-- A **Rucio tape recall** of at least one (preferably all) Phase2Spring23 PU200
-  dataset(s). Typically 1–3 days. Once recalled, `scripts/ntuple_produce.py
-  run --campaign Phase2Spring23 --sample TT_PU200 …` works as-is.
+What's NOT in this production:
+
+- `L1Layer2Met_pt` is currently commented out in
+  `patches/runPerformanceNTuple.patch` (CMSSW_14_2_X does have
+  `addCTL2Met()` — one-line uncomment + `scripts/apply_ntuple_recipe.sh
+  apply` enables it).
+- `SingleNeutrino_PU200` and `SMS_T1tttt_PU200` don't exist in the
+  Phase2Spring24 production; substitute MinBias for the PU-only baseline and
+  the VBFHToInvisible tail for high-MET coverage.
+
+Stretch deliverable from yesterday (still on disk, still useful as a
+baseline for ablation): a re-preprocessed version of the existing 25Jul8
+ntuples in the new H5 schema is at
+`outputs/preprocessed/26May20_25Jul8_extendedH5_v0/` (148k events). Only
+the 8 alternative-MET-algorithm event features are populated there —
+everything else is zero-filled because the 25Jul8 source ntuples predate
+the extended saveCands recipe.
 
 ---
 
@@ -121,7 +137,15 @@ silently catching the noPU variant):
 
 ---
 
-## 2. The blocker
+## 2. The blocker (RESOLVED — see §6)
+
+**The original "tape-only" diagnosis below was wrong; see §6 for the
+correction.** The probe script used `grep -qvE` which can return 1 even
+when non-matching lines exist; `grep -cvE | …` gave the right answer
+that all 5 samples have full disk coverage and run today without recall.
+The original section is kept for the history.
+
+---
 
 Every resolved Phase2Spring23 PU200 dataset is currently **100% tape-resident**:
 
@@ -318,15 +342,26 @@ Event-level (3/3 vertex + 4/4 alt-MET):
 
 ### Disk availability (Phase2Spring24 PU200, 21 May 2026)
 
+Re-checked with a corrected dasgoclient query (the earlier "0/5 disk" verdict
+was a `grep -qv` exit-code quirk, not real). Sampling 10 random files per
+dataset, every one of them has at least one disk replica somewhere in the
+federation, and `xrdcp root://cmsxrootd.fnal.gov//...` works directly:
+
 ```
-DYToLL_PU200             5/5 disk  ✓  (T2_ES_CIEMAT, T2_UK_London_IC) — 989k events
-MinBias_PU200            0/5 disk  (tape)  — 2.0M events
-TT_PU200                 0/5 disk  (tape)  — 300k events
-VBF_HToInvisible_PU200   0/5 disk  (tape)  — ~200k events
-WJetsToLNu_PU200         0/5 disk  (tape)  — 34k events
-SingleNeutrino_PU200     — not in Phase2Spring24
-SMS_T1tttt_PU200         — not in Phase2Spring24
+DYToLL_PU200             10/10 have ≥1 disk replica  — 989k events available
+MinBias_PU200            10/10                       — 2.0M events
+TT_PU200                 10/10                       — 300k events
+VBF_HToInvisible_PU200   10/10                       — ~200k events
+WJetsToLNu_PU200         10/10                       — 34k events
+SingleNeutrino_PU200     — not in Phase2Spring24 production
+SMS_T1tttt_PU200         — not in Phase2Spring24 production
 ```
+
+**No tape recall needed.** Production can start on any of the 5 samples right
+now via XRootD. The previously-reported "tape-only" verdict (in §3 above and
+yesterday's writeup) was wrong — my probe script used `grep -qvE` which
+exits 1 even when non-matching lines exist on some grep versions; replacing
+with `grep -cvE` and a >0 check gives the correct picture.
 
 ### Cost model
 
@@ -345,33 +380,46 @@ investment — 200 condor slots collapses the same workload to 1 wall day.
 
 ### Recommended next steps for the user
 
-1. **Submit Rucio recalls** for TT_PU200, VBF_HToInvisible_PU200,
-   MinBias_PU200, WJetsToLNu_PU200. Typical 1–3 days.
-2. **In parallel**: kick off DYToLL_PU200 production at whatever event budget
-   you want. Suggested smoke-then-scale:
-   ```bash
-   source /cvmfs/cms.cern.ch/cmsset_default.sh
-   export SCRAM_ARCH=el8_amd64_gcc12
-   cd ~/CMSSW_14_2_0_pre2_L1DeepMET && eval $(scramv1 runtime -sh)
-   cd ~/L1DeepMET/.claude/worktrees/jolly-lalande-3e5006
+All 5 samples are runnable today — no tape recall, no waiting. Suggested
+order is smoke-then-scale, sample-by-sample (or in parallel if you have
+the compute budget):
 
-   # First a 100-event sanity check (~10 min wall), confirms 1 worker works:
-   scripts/ntuple_produce.py run --sample DYToLL_PU200 --campaign Phase2Spring24 \
-       --tag 26May21_142_extended_v0 --n-events 100 --workers 1 --max-files 10 \
-       --output-root /ceph/cms/store/user/dprimosc/l1deepmet
+```bash
+source /cvmfs/cms.cern.ch/cmsset_default.sh
+export SCRAM_ARCH=el8_amd64_gcc12
+cd ~/CMSSW_14_2_0_pre2_L1DeepMET && eval $(scramv1 runtime -sh)
+cd ~/L1DeepMET/.claude/worktrees/jolly-lalande-3e5006
 
-   # Then the real run, e.g. 50k events on 16 workers (~18 hours):
-   scripts/ntuple_produce.py run --sample DYToLL_PU200 --campaign Phase2Spring24 \
-       --tag 26May21_142_extended_v0 --n-events 50000 --workers 16 \
-       --output-root /ceph/cms/store/user/dprimosc/l1deepmet
-   ```
-   Use `screen` or `tmux` — the wrapper is resumable via state.json if
-   you ctrl-C and re-launch.
-3. **Once tape recalls land**, repeat step 2 for each sample.
-4. **After all production**: `scripts/preprocess.py --feature-layout extended
-   --tag 26May21_142_extended_v0 --data-root /ceph/.../26May21_142_extended_v0`
-   produces the new H5 with all 26 candidate + 13 event features populated
-   from real data (not zero-filled as the Track B placeholder was).
+# Step 1: 100-event sanity check on any single sample (~10 min wall) — confirms
+# the wrapper, XRootD reads, and the patched recipe all work for that sample.
+scripts/ntuple_produce.py run --sample TT_PU200 --campaign Phase2Spring24 \
+    --tag 26May21_142_extended_v0 --n-events 100 --workers 1 --max-files 10 \
+    --output-root /ceph/cms/store/user/dprimosc/l1deepmet
+
+# Step 2: real production, one sample at a time inside screen/tmux. Tag is
+# shared across samples so they aggregate under the same output dir tree.
+# Per the cost model, 50k events × 16 workers ≈ 18 hr wall per sample;
+# 200k × 16 workers ≈ 3 days. Tune --n-events to your patience.
+for SAMPLE in TT_PU200 VBFHToInvisible_PU200 MinBias_PU200 WJetsToLNu_PU200 DYToLL_PU200; do
+    scripts/ntuple_produce.py run --sample $SAMPLE --campaign Phase2Spring24 \
+        --tag 26May21_142_extended_v0 --n-events 50000 --workers 16 \
+        --output-root /ceph/cms/store/user/dprimosc/l1deepmet
+done
+```
+
+The wrapper is resumable — Ctrl-C and re-launch picks up only the
+failed/unfinished jobs (per-sample state.json). A single
+`L1DEEPMET_XROOTD_REDIRECTOR=root://...` env var override switches to a
+closer XRootD door if the FNAL one is sluggish from UCSD.
+
+After all production: `scripts/preprocess.py --feature-layout extended
+--tag 26May21_142_extended_v0 --data-root /ceph/.../26May21_142_extended_v0`
+produces the H5 with all 26 candidate + 13 event features populated from
+real data.
+
+**For non-trivial event budgets, HTCondor (Phase 3 in the original plan) is
+the right answer** — 200 condor slots collapses the same workload to 1 wall
+day. Worth doing if you want >50k events per sample.
 
 ## 7. Open follow-ups not addressed
 
