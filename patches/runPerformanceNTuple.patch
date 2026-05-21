@@ -2,7 +2,7 @@
 +++ b/NtupleProducer/python/runPerformanceNTuple.py	2026-05-19 18:02:23.049023652 -0700
 @@ -826,14 +826,41 @@
          getattr(process, 'l1tLayer1'+R).pfAlgoParameters.debug = True
- 
+
  def saveCands():
 +    # L1DeepMET extended: emit every Layer-2-correlator per-candidate variable
 +    # that's plausibly useful for MET reconstruction. The original three
@@ -43,7 +43,7 @@
                                             ),
                                         )
      monitorPerf("L1PF", "l1tLayer1:PF", saveCands=True)
-@@ -852,3 +879,18 @@
+@@ -852,3 +879,38 @@
                                             ),
                                        )
      process.p += process.gencandTable
@@ -57,8 +57,29 @@
 +if _os.environ.get("L1DEEPMET_EXTENDED", "1") == "1":
 +    saveCands()                   # per-candidate state (extended moreVariables above)
 +    saveGenCands()                # gen-level particles for METAllVisible
-+    addCTL2Met()                  # Layer-2 correlator MET (the user's framing)
-+    # The following helpers are already called unconditionally elsewhere in
-+    # the file (addStaMu, addTkEG, addHGCalTPs) — re-calling would double-add.
-+    # Leave them as-is; they're already in the default ntuple.
++    # Layer-2 correlator MET — keyed "L1Layer2" so the resulting NanoAOD table
++    # is L1Layer2Met_* (matching the L1PuppiMet_* / L1PFMet_* naming).
++    # Calling addCTL2Met() instead would key it "ctl2MET" → branch
++    # ctl2METMet_* (inconsistent with siblings), so we inline the assignment
++    # with the clean key.
++    process.l1pfmetTable.mets.L1Layer2 = cms.InputTag("l1tMETPFProducer", "")
++    # L1 primary vertices — exposes PV z0 + sum-pt + multiplicity so the
++    # model can compute its own z0_rel per candidate (PUPPI's principal
++    # PU-rejection discriminant). Uses the standard L1T vertex emulator
++    # that's already in the process path (extraPFStuff).
++    process.l1deepmetVtxTable = cms.EDProducer("VertexWordFlatTableProducer",
++        src = cms.InputTag("l1tVertexFinderEmulator", "l1verticesEmulation"),
++        name = cms.string("L1Vtx"),
++        cut = cms.string(""),
++        doc = cms.string("L1 primary vertices from emulator (L1DeepMET extended)"),
++        singleton = cms.bool(False),
++        extension = cms.bool(False),
++        variables = cms.PSet(
++            z0    = Var("z0",  float, precision=16, doc="vertex z0 [cm]"),
++            sumPt = Var("pt",  float, precision=10, doc="vertex sum pt [GeV]"),
++        ),
++    )
++    process.p += process.l1deepmetVtxTable
++    # addStaMu, addTkEG, addHGCalTPs are already called unconditionally
++    # elsewhere in the file — re-calling would double-add.
 +# ───────────────────────────────────────────────────────────────────────────
