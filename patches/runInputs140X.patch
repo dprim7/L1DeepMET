@@ -1,21 +1,21 @@
-diff --git a/NtupleProducer/python/runInputs131X.py b/NtupleProducer/python/runInputs131X.py
-index ad35013..eb0b070 100644
---- a/NtupleProducer/python/runInputs131X.py
-+++ b/NtupleProducer/python/runInputs131X.py
-@@ -157,3 +157,29 @@ process.e = cms.EndPath(process.out)
+diff --git a/NtupleProducer/python/runInputs140X.py b/NtupleProducer/python/runInputs140X.py
+index 80bbba7..802330f 100644
+--- a/NtupleProducer/python/runInputs140X.py
++++ b/NtupleProducer/python/runInputs140X.py
+@@ -158,3 +158,29 @@ process.e = cms.EndPath(process.out)
  process.schedule = cms.Schedule([process.p,process.e])
  
  process.out.outputCommands += [ "drop *_l1tHGCalVFEProducer_*_*", ]
 +
 +
 +# ─── L1DeepMET CLI overrides ──────────────────────────────────────────────
-+# Stage 1 of the L1DeepMET 2-step ntuple pipeline: re-emulate L1 from MINIAOD
-+# → write inputs131X.root (the intermediate consumed by runPerformanceNTuple).
-+# scripts/ntuple_produce.py drives this via:
-+#   cmsRun runInputs131X.py \
++# Stage 1 of the L1DeepMET 2-step ntuple pipeline (Phase2Spring24 path):
++# re-emulate L1 from MINIAOD → write inputs140X.root (the intermediate
++# consumed by runPerformanceNTuple). scripts/ntuple_produce.py drives this via:
++#   cmsRun runInputs140X.py \
 +#       inputFiles=root://.../store/.../some_miniaod.root \
 +#       maxEvents=1000 \
-+#       outputFile=/tmp/inputs131X_NNNN.root
++#       outputFile=/tmp/inputs140X_NNNN.root
 +# Parses sys.argv directly to avoid VarParsing's outputFile mangling.
 +import os as _l1dmet_os, sys as _l1dmet_sys
 +_l1dmet_overrides = {}

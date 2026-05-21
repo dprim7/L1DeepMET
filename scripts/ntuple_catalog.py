@@ -57,46 +57,50 @@ CATALOG_DIR = REPO_ROOT / "sample_catalog"
 # most recent matching dataset.
 RECIPES: dict[str, dict[str, dict]] = {
     "Phase2Spring24": {
+        # Every sample query gates on `*PU200*` in the campaign segment to
+        # avoid silently catching the noPU variant (alphabetical sort puts
+        # noPU after PU200 — lowercase 'n' > uppercase 'P').
         "TT_PU200": {
             "tier": 1,
-            "query": "/TTTo*_TuneCP5_14TeV*/Phase2Spring24*/GEN-SIM-DIGI-RAW-MINIAOD",
+            "query": "/TTTo*_TuneCP5_14TeV*/Phase2Spring24*PU200*/GEN-SIM-DIGI-RAW-MINIAOD",
             "target_events": 200_000,
             "doc": "Bulk MET training source — semileptonic ttbar gives broad real MET",
         },
         "VBFHToInvisible_PU200": {
             "tier": 1,
-            "query": "/VBF_HToInvisible*_14TeV*/Phase2Spring24*/GEN-SIM-DIGI-RAW-MINIAOD",
+            # Phase2Spring24 names it with an underscore: VBF_HToInvisible.
+            "query": "/VBF_HToInvisible*_14TeV*/Phase2Spring24*PU200*/GEN-SIM-DIGI-RAW-MINIAOD",
             "target_events": 80_000,
             "doc": "Clean genuine-MET signal — VBF Higgs → invisibles",
         },
         "MinBias_PU200": {
             "tier": 1,
-            "query": "/MinBias_TuneCP5_14TeV*/Phase2Spring24*/GEN-SIM-DIGI-RAW-MINIAOD",
+            "query": "/MinBias_TuneCP5_14TeV*/Phase2Spring24*PU200*/GEN-SIM-DIGI-RAW-MINIAOD",
             "target_events": 50_000,
             "doc": "Pure pileup — no genuine MET; establishes the false-positive rate floor",
         },
         "SingleNeutrino_PU200": {
             "tier": 1,
-            "query": "/SingleNeutrino*/Phase2Spring24*/GEN-SIM-DIGI-RAW-MINIAOD",
+            "query": "/SingleNeutrino*/Phase2Spring24*PU200*/GEN-SIM-DIGI-RAW-MINIAOD",
             "target_events": 30_000,
             "doc": "Zero genuine MET — defines model noise floor",
         },
         "WJetsToLNu_PU200": {
             "tier": 2,
-            "query": "/WJetsToLNu_TuneCP5_14TeV*/Phase2Spring24*/GEN-SIM-DIGI-RAW-MINIAOD",
+            "query": "/WJetsToLNu_TuneCP5_14TeV*/Phase2Spring24*PU200*/GEN-SIM-DIGI-RAW-MINIAOD",
             "target_events": 100_000,
             "doc": "W → ℓν: broad MET spectrum, both real signal + pileup contributions",
         },
         "DYToLL_PU200": {
             "tier": 2,
-            "query": "/DYToLL_M-50_TuneCP5_14TeV*/Phase2Spring24*/GEN-SIM-DIGI-RAW-MINIAOD",
+            "query": "/DYToLL_M-50_TuneCP5_14TeV*/Phase2Spring24*PU200*/GEN-SIM-DIGI-RAW-MINIAOD",
             "target_events": 50_000,
             "doc": "Z + jets, no genuine MET — control sample for response calibration",
         },
         # Tier 3 SUSY signal — optional, big MET tail
         "SMS_T1tttt_PU200": {
             "tier": 3,
-            "query": "/SMS-T1tttt_TuneCP5_14TeV*/Phase2Spring24*/GEN-SIM-DIGI-RAW-MINIAOD",
+            "query": "/SMS-T1tttt_TuneCP5_14TeV*/Phase2Spring24*PU200*/GEN-SIM-DIGI-RAW-MINIAOD",
             "target_events": 50_000,
             "doc": "SUSY high-MET tail — currently under-represented",
         },

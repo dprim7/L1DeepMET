@@ -6,10 +6,10 @@ Given a named sample (from `sample_catalog/<campaign>.json`) and an event
 budget, each input MINIAOD file is processed through two sequential cmsRun
 invocations:
 
-  Stage 1 — `cmsRun runInputs131X.py inputFiles=… maxEvents=N outputFile=…`
+  Stage 1 — `cmsRun runInputs140X.py inputFiles=… maxEvents=N outputFile=…`
             Re-emulates the full L1 chain (track trigger, vertex finder,
             HGCal TPs, GMT, Layer-1, Layer-2) and writes a fat intermediate
-            ROOT (`inputs131X_<job>.root`) into the scratch dir.
+            ROOT (`inputs140X_<job>.root`) into the scratch dir.
 
   Stage 2 — `cmsRun runPerformanceNTuple.py inputFiles=file:… outputFile=…`
             Consumes the intermediate, runs the L1PFCandTableProducer (with
@@ -17,7 +17,7 @@ invocations:
             FlatTable producers, writes `perfNano_<job>.root` to the
             tag-rooted output dir, deletes the intermediate.
 
-Both recipes live in external/FastPUPPI (14_0_X branch); both honour the
+Both recipes live in external/FastPUPPI (14_2_X branch); both honour the
 sys.argv-based inputFiles/maxEvents/outputFile overrides added by our
 patch (apply via scripts/apply_ntuple_recipe.sh apply before use).
 
@@ -41,15 +41,15 @@ Scratch directory for intermediates: $L1DEEPMET_SCRATCH, default
 Usage
 ─────
   scripts/ntuple_produce.py run \\
-      --sample TT_PU200 \\
-      --campaign Phase2Spring23 \\
-      --tag 26May20_140X_extended_v0 \\
+      --sample DYToLL_PU200 \\
+      --campaign Phase2Spring24 \\
+      --tag 26May20_142_extended_v0 \\
       --n-events 50000 \\
       --output-root /ceph/cms/store/user/dprimosc/l1deepmet \\
       --workers 4
 
-  scripts/ntuple_produce.py status --tag 26May20_140X_extended_v0 \\
-      --sample TT_PU200
+  scripts/ntuple_produce.py status --tag 26May20_142_extended_v0 \\
+      --sample DYToLL_PU200
 """
 from __future__ import annotations
 
@@ -67,9 +67,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CATALOG_DIR = REPO_ROOT / "sample_catalog"
 SUBMODULE_PY = REPO_ROOT / "external" / "FastPUPPI" / "NtupleProducer" / "python"
-# Two-stage workflow (FastPUPPI 14_0_X): MINIAOD → re-emulate L1 →
-# inputs131X.root → analyze → perfNano.root.
-STAGE1_PATH = SUBMODULE_PY / "runInputs131X.py"
+# Two-stage workflow (FastPUPPI 14_2_X, matching the user's 25Jul8 production
+# provenance: CMSSW_14_2_0_pre2 + GlobalTag 141X_mcRun4_realistic_v3 +
+# Geometry D110 + Phase2Spring24 inputs):
+#   MINIAOD → re-emulate L1 → inputs140X.root → analyze → perfNano.root
+STAGE1_PATH = SUBMODULE_PY / "runInputs140X.py"
 STAGE2_PATH = SUBMODULE_PY / "runPerformanceNTuple.py"
 # Legacy alias for older callers / scripts that still reference RECIPE_PATH.
 RECIPE_PATH = STAGE2_PATH
@@ -226,7 +228,7 @@ def _run_one(args_tuple) -> tuple[str, dict]:
     log_file_path = Path(output_dir) / f"perfNano_{job_id}.log"
     out_file.parent.mkdir(parents=True, exist_ok=True)
 
-    intermediate = _scratch_dir() / f"inputs131X_{job_id}.root"
+    intermediate = _scratch_dir() / f"inputs140X_{job_id}.root"
 
     env = os.environ.copy()
     env["L1DEEPMET_EXTENDED"] = "1"   # both recipes honour this
@@ -239,7 +241,7 @@ def _run_one(args_tuple) -> tuple[str, dict]:
             f"maxEvents={max_events}",
             f"outputFile={intermediate}",
         ]
-        ok1, wall1 = _cmsrun_one(stage1_cmd, env, logf, "STAGE 1: runInputs131X.py", timeout=3600 * 6)
+        ok1, wall1 = _cmsrun_one(stage1_cmd, env, logf, "STAGE 1: runInputs140X.py", timeout=3600 * 6)
         stage1_size = intermediate.stat().st_size if intermediate.exists() else 0
 
         # Stage 2: only attempt if stage 1 produced an intermediate
@@ -383,7 +385,7 @@ def main():
 
     p = sub.add_parser("run", help="Launch (or resume) ntuple production for one sample")
     p.add_argument("--sample", required=True)
-    p.add_argument("--campaign", default="Phase2Spring23")
+    p.add_argument("--campaign", default="Phase2Spring24")
     p.add_argument("--tag", required=True, help="Output tag, e.g. 26May19_150X_extended_v0")
     p.add_argument("--n-events", type=int, required=True)
     p.add_argument("--output-root", default="/ceph/cms/store/user/dprimosc/l1deepmet")

@@ -20,8 +20,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SUBMODULE="${REPO_ROOT}/external/FastPUPPI"
 
 # Ordered list of patches; each patches one file in the submodule.
+# Stage 1 is runInputs140X.py (FastPUPPI 14_2_X branch — D110 + 141X GT,
+# matches Phase2Spring24 inputs and the user's 25Jul8 production provenance).
 PATCHES=(
-    "${REPO_ROOT}/patches/runInputs131X.patch"
+    "${REPO_ROOT}/patches/runInputs140X.patch"
     "${REPO_ROOT}/patches/runPerformanceNTuple.patch"
 )
 

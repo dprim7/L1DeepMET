@@ -1,18 +1,15 @@
 diff --git a/NtupleProducer/python/runPerformanceNTuple.py b/NtupleProducer/python/runPerformanceNTuple.py
-index 9ee8fed..2a526d1 100644
+index 0168b78..16fa3b8 100644
 --- a/NtupleProducer/python/runPerformanceNTuple.py
 +++ b/NtupleProducer/python/runPerformanceNTuple.py
-@@ -736,14 +736,43 @@ if False:
+@@ -748,14 +748,40 @@ if False:
          getattr(process, 'l1tLayer1'+R).pfAlgoParameters.debug = True
  
  def saveCands():
 +    # L1DeepMET extended: emit every Layer-2-correlator per-candidate variable
-+    # that's plausibly useful for MET reconstruction. The original three
-+    # (puppiWeight, pdgId, charge) plus z0/hw* (vertex association and the
-+    # FPGA-quantised values), track-quality accessors for charged candidates,
-+    # and cluster ID scores for neutral candidates from HGCal. The
-+    # `? pfTrack.isNonnull ? ... : -1` pattern protects against missing
-+    # accessors on candidates that don't have a track / cluster pointer.
++    # plausibly useful for MET reconstruction. The `? pfTrack.isNonnull ? … : -1`
++    # guard protects against missing accessors on neutrals (no track) / charged
++    # (no cluster), so a missing pointer falls back to -1 instead of crashing.
      process.l1pfcandTable = cms.EDProducer("L1PFCandTableProducer",
                                             commonSel = cms.string("pt > 0.0 && abs(eta) < 10.0"),
                                             cands = cms.PSet(
@@ -47,7 +44,7 @@ index 9ee8fed..2a526d1 100644
                                             ),
                                         )
      monitorPerf("L1PF", "l1tLayer1:PF", saveCands=True)
-@@ -762,3 +791,63 @@ def saveGenCands():
+@@ -774,3 +800,62 @@ def saveGenCands():
                                             ),
                                        )
      process.p += process.gencandTable
@@ -57,8 +54,7 @@ index 9ee8fed..2a526d1 100644
 +# Activate everything plausibly useful for MET training. Each block is opt-in
 +# via the L1DEEPMET_EXTENDED env var (default on) so this same config still
 +# runs vanilla when invoked with L1DEEPMET_EXTENDED=0.
-+# Note: 14_0_X has no addCTL2Met() helper, so L1Layer2 MET is not produced
-+# here. It's available in 15_1_X — re-add if/when we pivot back.
++# 14_2_X does have addCTL2Met available — uncomment to also produce L1Layer2 MET.
 +import os as _l1dmet_os
 +if _l1dmet_os.environ.get("L1DEEPMET_EXTENDED", "1") == "1":
 +    saveCands()                   # per-candidate state (extended moreVariables above)
@@ -84,7 +80,7 @@ index 9ee8fed..2a526d1 100644
 +# Universal CLI overrides for the producer (always active). Lets
 +# scripts/ntuple_produce.py invoke us as
 +#   cmsRun runPerformanceNTuple.py \
-+#       inputFiles=file:/tmp/inputs131X_NNNN.root \
++#       inputFiles=file:/tmp/inputs140X_NNNN.root \
 +#       maxEvents=1000 \
 +#       outputFile=/ceph/.../perfNano_NNNN.root
 +# Without these overrides cmsRun silently uses the hardcoded placeholder
