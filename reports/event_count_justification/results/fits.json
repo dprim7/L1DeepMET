@@ -1,0 +1,17 @@
+{
+  "sigma_seed_used": 0.19779791411284825,
+  "n_top": 7328,
+  "n_prev": 4000,
+  "mae_at_n_top_extended": 19.597418467203777,
+  "mae_at_n_prev_extended": 20.05283482869466,
+  "marginal_n_prev_to_top": 0.45541636149088305,
+  "is_data_limited": true,
+  "fit": {
+    "A": 5.433285959932464e-19,
+    "B": 24.06524813824404,
+    "alpha": 0.022578772667686903
+  },
+  "n_star_for_target": 400.0000000000001,
+  "mae_at_n_star": 21.020305474631304,
+  "mae_asymptote": 5.433285959932464e-19
+}
