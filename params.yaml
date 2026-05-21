@@ -87,9 +87,10 @@ preprocess:
     - calo_met_phi
     - tk_met_pt                 # L1TKMet_pt — track-only MET
     - tk_met_phi
-    # ─── Layer-2 correlator MET (NEW — from patch's addCTL2Met)
-    - layer2_met_pt             # L1Layer2Met_pt — CTL2 MET, the user's framing
-    - layer2_met_phi
+    # ─── Layer-2 correlator MET — UNAVAILABLE in CMSSW_14_0_X (no addCTL2Met
+    # helper in FastPUPPI 14_0_X). Re-add if/when we move to 15_1_X production.
+    # - layer2_met_pt
+    # - layer2_met_phi
     # ─── L1 primary vertex (NEW — from patch's VertexWordFlatTableProducer)
     - lead_vtx_z0               # L1Vtx_z0[0] — leading vertex z position
     - lead_vtx_sumpt            # L1Vtx_sumPt[0] — leading vertex sum pt

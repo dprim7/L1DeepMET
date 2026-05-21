@@ -1,8 +1,8 @@
 diff --git a/NtupleProducer/python/runPerformanceNTuple.py b/NtupleProducer/python/runPerformanceNTuple.py
-index 4dc42b7..3b69c2a 100644
+index 9ee8fed..2a526d1 100644
 --- a/NtupleProducer/python/runPerformanceNTuple.py
 +++ b/NtupleProducer/python/runPerformanceNTuple.py
-@@ -826,14 +826,41 @@ if False:
+@@ -736,14 +736,43 @@ if False:
          getattr(process, 'l1tLayer1'+R).pfAlgoParameters.debug = True
  
  def saveCands():
@@ -10,7 +10,9 @@ index 4dc42b7..3b69c2a 100644
 +    # that's plausibly useful for MET reconstruction. The original three
 +    # (puppiWeight, pdgId, charge) plus z0/hw* (vertex association and the
 +    # FPGA-quantised values), track-quality accessors for charged candidates,
-+    # and cluster ID scores for neutral candidates from HGCal.
++    # and cluster ID scores for neutral candidates from HGCal. The
++    # `? pfTrack.isNonnull ? ... : -1` pattern protects against missing
++    # accessors on candidates that don't have a track / cluster pointer.
      process.l1pfcandTable = cms.EDProducer("L1PFCandTableProducer",
                                             commonSel = cms.string("pt > 0.0 && abs(eta) < 10.0"),
                                             cands = cms.PSet(
@@ -45,7 +47,7 @@ index 4dc42b7..3b69c2a 100644
                                             ),
                                         )
      monitorPerf("L1PF", "l1tLayer1:PF", saveCands=True)
-@@ -852,3 +879,57 @@ def saveGenCands():
+@@ -762,3 +791,63 @@ def saveGenCands():
                                             ),
                                        )
      process.p += process.gencandTable
@@ -53,22 +55,18 @@ index 4dc42b7..3b69c2a 100644
 +
 +# ─── L1DeepMET extended recipe ─────────────────────────────────────────────
 +# Activate everything plausibly useful for MET training. Each block is opt-in
-+# via a process attribute so this same config still runs vanilla when invoked
-+# without the L1DEEPMET_EXTENDED env var.
-+import os as _os
-+if _os.environ.get("L1DEEPMET_EXTENDED", "1") == "1":
++# via the L1DEEPMET_EXTENDED env var (default on) so this same config still
++# runs vanilla when invoked with L1DEEPMET_EXTENDED=0.
++# Note: 14_0_X has no addCTL2Met() helper, so L1Layer2 MET is not produced
++# here. It's available in 15_1_X — re-add if/when we pivot back.
++import os as _l1dmet_os
++if _l1dmet_os.environ.get("L1DEEPMET_EXTENDED", "1") == "1":
 +    saveCands()                   # per-candidate state (extended moreVariables above)
 +    saveGenCands()                # gen-level particles for METAllVisible
-+    # Layer-2 correlator MET — keyed "L1Layer2" so the resulting NanoAOD table
-+    # is L1Layer2Met_* (matching the L1PuppiMet_* / L1PFMet_* naming).
-+    # Calling addCTL2Met() instead would key it "ctl2MET" → branch
-+    # ctl2METMet_* (inconsistent with siblings), so we inline the assignment
-+    # with the clean key.
-+    process.l1pfmetTable.mets.L1Layer2 = cms.InputTag("l1tMETPFProducer", "")
 +    # L1 primary vertices — exposes PV z0 + sum-pt + multiplicity so the
 +    # model can compute its own z0_rel per candidate (PUPPI's principal
 +    # PU-rejection discriminant). Uses the standard L1T vertex emulator
-+    # that's already in the process path (extraPFStuff).
++    # already in the process path (extraPFStuff).
 +    process.l1deepmetVtxTable = cms.EDProducer("VertexWordFlatTableProducer",
 +        src = cms.InputTag("l1tVertexFinderEmulator", "l1verticesEmulation"),
 +        name = cms.string("L1Vtx"),
@@ -82,24 +80,34 @@ index 4dc42b7..3b69c2a 100644
 +        ),
 +    )
 +    process.p += process.l1deepmetVtxTable
-+    # addStaMu, addTkEG, addHGCalTPs are already called unconditionally
-+    # elsewhere in the file — re-calling would double-add.
 +
-+# Universal CLI overrides for the producer (always active — works with or
-+# without L1DEEPMET_EXTENDED). Lets scripts/ntuple_produce.py invoke us as
++# Universal CLI overrides for the producer (always active). Lets
++# scripts/ntuple_produce.py invoke us as
 +#   cmsRun runPerformanceNTuple.py \
-+#       inputFiles=root://.../store/.../foo.root \
++#       inputFiles=file:/tmp/inputs131X_NNNN.root \
 +#       maxEvents=1000 \
-+#       outputFile=perfNano_0001.root
++#       outputFile=/ceph/.../perfNano_NNNN.root
 +# Without these overrides cmsRun silently uses the hardcoded placeholder
 +# `inputs125X.root` at the top of this file and ignores the CLI args.
-+from FWCore.ParameterSet.VarParsing import VarParsing as _L1DMetVarParsing
-+_l1dmet_cli = _L1DMetVarParsing("analysis")
-+_l1dmet_cli.parseArguments()
-+if _l1dmet_cli.inputFiles:
-+    process.source.fileNames = cms.untracked.vstring(_l1dmet_cli.inputFiles)
-+if _l1dmet_cli.maxEvents != -1:
-+    process.maxEvents.input = cms.untracked.int32(_l1dmet_cli.maxEvents)
-+if _l1dmet_cli.outputFile:
-+    process.TFileService.fileName = cms.string(_l1dmet_cli.outputFile)
++# We parse sys.argv directly instead of using VarParsing("analysis") to
++# avoid the latter's _numEventN suffix on outputFile.
++import sys as _l1dmet_sys
++_l1dmet_overrides = {}
++for _arg in _l1dmet_sys.argv[1:]:
++    if "=" in _arg:
++        _k, _v = _arg.split("=", 1)
++        _l1dmet_overrides[_k] = _v
++if "inputFiles" in _l1dmet_overrides:
++    process.source.fileNames = cms.untracked.vstring(
++        _l1dmet_overrides["inputFiles"].split(",")
++    )
++if "maxEvents" in _l1dmet_overrides:
++    process.maxEvents.input = cms.untracked.int32(int(_l1dmet_overrides["maxEvents"]))
++if "outputFile" in _l1dmet_overrides:
++    # process.outnano carries the FlatTable Events tree (the actual ntuple);
++    # TFileService is auxiliary (ResponseNTuplizer scratch). Both follow
++    # --outputFile so each cmsRun job's outputs cluster together.
++    process.outnano.fileName = cms.untracked.string(_l1dmet_overrides["outputFile"])
++    _stem, _ext = _l1dmet_os.path.splitext(_l1dmet_overrides["outputFile"])
++    process.TFileService.fileName = cms.string(f"{_stem}_perfTuple{_ext}")
 +# ───────────────────────────────────────────────────────────────────────────

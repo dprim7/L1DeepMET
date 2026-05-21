@@ -53,7 +53,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CATALOG_DIR = REPO_ROOT / "sample_catalog"
 SUBMODULE_PY = REPO_ROOT / "external" / "FastPUPPI" / "NtupleProducer" / "python"
-RECIPE_PATH = SUBMODULE_PY / "runPerformanceNTuple.py"
+# Two-stage workflow (FastPUPPI 14_0_X): MINIAOD → re-emulate L1 →
+# inputs131X.root → analyze → perfNano.root.
+STAGE1_PATH = SUBMODULE_PY / "runInputs131X.py"
+STAGE2_PATH = SUBMODULE_PY / "runPerformanceNTuple.py"
+# Legacy alias for older callers / scripts that still reference RECIPE_PATH.
+RECIPE_PATH = STAGE2_PATH
 
 
 def _now_iso() -> str:
@@ -153,39 +158,105 @@ def _input_url(input_file: str) -> str:
     return f"file:{input_file}"
 
 
-def _run_one(args_tuple) -> tuple[str, dict]:
-    """Worker: cmsRun one input → one perfNano output. Returns (job_id, result)."""
-    job_id, input_file, max_events, output_dir, recipe_path = args_tuple
-    out_file = Path(output_dir) / f"perfNano_{job_id}.root"
-    log_file = Path(output_dir) / f"perfNano_{job_id}.log"
-    out_file.parent.mkdir(parents=True, exist_ok=True)
+# Scratch directory for stage-1 intermediate files (large; deleted after stage 2).
+# Override via $L1DEEPMET_SCRATCH if /tmp is too small. Per-job filenames are
+# unique so parallel workers don't collide.
+_DEFAULT_SCRATCH = "/tmp/l1deepmet_intermediates"
 
-    # cmsRun command: pass inputFiles + maxEvents on the command line.
-    cmd = [
-        "cmsRun", str(recipe_path),
-        f"inputFiles={_input_url(input_file)}",
-        f"maxEvents={max_events}",
-        f"outputFile={out_file}",
-    ]
-    env = os.environ.copy()
-    env["L1DEEPMET_EXTENDED"] = "1"   # the recipe checks this
+
+def _scratch_dir() -> Path:
+    p = Path(os.environ.get("L1DEEPMET_SCRATCH", _DEFAULT_SCRATCH))
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _cmsrun_one(cmd: list[str], env: dict, log_file, label: str, timeout: int) -> tuple[bool, float]:
+    """Run one cmsRun invocation, appending header + stdout/err to log_file.
+    Returns (ok, wall_seconds)."""
     t0 = datetime.datetime.now(datetime.timezone.utc)
+    log_file.write(f"\n=== {label} ===\n")
+    log_file.write(f"{' '.join(cmd)}\n\n")
+    log_file.flush()
     try:
-        with open(log_file, "w") as logf:
-            r = subprocess.run(cmd, env=env, stdout=logf, stderr=subprocess.STDOUT,
-                               check=False, timeout=3600 * 6)   # 6 hr per file
-        ok = (r.returncode == 0) and out_file.exists()
+        r = subprocess.run(cmd, env=env, stdout=log_file, stderr=subprocess.STDOUT,
+                           check=False, timeout=timeout)
+        ok = (r.returncode == 0)
     except subprocess.TimeoutExpired:
         ok = False
-        r = None
     elapsed = (datetime.datetime.now(datetime.timezone.utc) - t0).total_seconds()
+    return ok, elapsed
+
+
+def _run_one(args_tuple) -> tuple[str, dict]:
+    """Worker: 2-stage cmsRun on one MINIAOD input → one perfNano output.
+
+    Stage 1 (runInputs131X.py):  MINIAOD URL → inputs131X_<job>.root in scratch
+    Stage 2 (runPerformanceNTuple.py):  intermediate → perfNano_<job>.root in output_dir
+    Scratch intermediate is deleted after stage 2 (whether stage 2 succeeded or not).
+    """
+    job_id, input_file, max_events, output_dir = args_tuple
+    out_file = Path(output_dir) / f"perfNano_{job_id}.root"
+    log_file_path = Path(output_dir) / f"perfNano_{job_id}.log"
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+
+    intermediate = _scratch_dir() / f"inputs131X_{job_id}.root"
+
+    env = os.environ.copy()
+    env["L1DEEPMET_EXTENDED"] = "1"   # both recipes honour this
+
+    with open(log_file_path, "w") as logf:
+        # Stage 1: re-emulate L1 from MINIAOD
+        stage1_cmd = [
+            "cmsRun", str(STAGE1_PATH),
+            f"inputFiles={_input_url(input_file)}",
+            f"maxEvents={max_events}",
+            f"outputFile={intermediate}",
+        ]
+        ok1, wall1 = _cmsrun_one(stage1_cmd, env, logf, "STAGE 1: runInputs131X.py", timeout=3600 * 6)
+        stage1_size = intermediate.stat().st_size if intermediate.exists() else 0
+
+        # Stage 2: only attempt if stage 1 produced an intermediate
+        ok2, wall2 = False, 0.0
+        if ok1 and intermediate.exists():
+            stage2_cmd = [
+                "cmsRun", str(STAGE2_PATH),
+                f"inputFiles=file:{intermediate}",
+                "maxEvents=-1",   # consume everything stage 1 wrote
+                f"outputFile={out_file}",
+            ]
+            ok2, wall2 = _cmsrun_one(stage2_cmd, env, logf, "STAGE 2: runPerformanceNTuple.py", timeout=3600 * 3)
+        else:
+            logf.write("\n=== STAGE 2: SKIPPED (stage 1 produced no intermediate) ===\n")
+
+    # Clean up scratch intermediate (potentially many hundred MB per job)
+    try:
+        intermediate.unlink(missing_ok=True)
+    except Exception:
+        pass
+    # Also delete the auxiliary perfTuple.root that the recipe emits via TFileService
+    perftuple = out_file.with_name(out_file.stem + "_perfTuple.root")
+    try:
+        perftuple.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+    if ok1 and ok2 and out_file.exists():
+        status = "ok"
+    elif not ok1:
+        status = "stage1_failed"
+    else:
+        status = "stage2_failed"
+
     return job_id, {
         "input": input_file,
         "output": str(out_file),
-        "status": "ok" if ok else "failed",
-        "log": str(log_file),
+        "status": status,
+        "log": str(log_file_path),
         "max_events": max_events,
-        "wall_s": elapsed,
+        "wall_s": wall1 + wall2,
+        "stage1_wall_s": wall1,
+        "stage2_wall_s": wall2,
+        "stage1_intermediate_size": stage1_size,
         "finished_at": _now_iso(),
     }
 
@@ -205,7 +276,7 @@ def cmd_run(args) -> None:
         jid = _job_id(input_file, idx)
         if state["jobs"].get(jid, {}).get("status") == "ok":
             continue
-        to_run.append((jid, input_file, max_events, str(out_dir), str(RECIPE_PATH)))
+        to_run.append((jid, input_file, max_events, str(out_dir)))
 
     # Provenance
     provenance = {
@@ -221,7 +292,9 @@ def cmd_run(args) -> None:
         "fastpuppi_sha": _git_sha(REPO_ROOT / "external" / "FastPUPPI"),
         "repo_sha": _git_sha(REPO_ROOT),
         "patch_applied": _patch_applied(),
-        "recipe": str(RECIPE_PATH),
+        "stage1_recipe": str(STAGE1_PATH),
+        "stage2_recipe": str(STAGE2_PATH),
+        "scratch_dir": str(_scratch_dir()),
         "extended_branches_enabled": True,
     }
     with (tag_root / args.sample / "provenance.json").open("w") as f:
@@ -283,7 +356,7 @@ def main():
 
     p = sub.add_parser("run", help="Launch (or resume) ntuple production for one sample")
     p.add_argument("--sample", required=True)
-    p.add_argument("--campaign", default="Phase2Spring24")
+    p.add_argument("--campaign", default="Phase2Spring23")
     p.add_argument("--tag", required=True, help="Output tag, e.g. 26May19_150X_extended_v0")
     p.add_argument("--n-events", type=int, required=True)
     p.add_argument("--output-root", default="/ceph/cms/store/user/dprimosc/l1deepmet")

@@ -101,6 +101,56 @@ RECIPES: dict[str, dict[str, dict]] = {
             "doc": "SUSY high-MET tail — currently under-represented",
         },
     },
+    # Phase2Spring23: matches the existing 25Jul8 production. Same sample
+    # list, same targets; queries point at the 131X mcRun4 v5 / D95-detector
+    # campaign which is what FastPUPPI 14_0_X's runInputs131X.py expects
+    # (Geometry D95 + GlobalTag 131X_mcRun4_realistic_v9).
+    "Phase2Spring23": {
+        "TT_PU200": {
+            "tier": 1,
+            "query": "/TTTo*_TuneCP5_14TeV*/Phase2Spring23*/GEN-SIM-DIGI-RAW-MINIAOD",
+            "target_events": 200_000,
+            "doc": "Bulk MET training source — semileptonic ttbar gives broad real MET",
+        },
+        "VBFHToInvisible_PU200": {
+            "tier": 1,
+            # Phase2Spring23 has it as VBFHToInvisible (no underscore between
+            # VBF and H), unlike Spring24 which uses VBF_HToInvisible.
+            "query": "/VBFHToInvisible*_14TeV*/Phase2Spring23*PU200*/GEN-SIM-DIGI-RAW-MINIAOD",
+            "target_events": 80_000,
+            "doc": "Clean genuine-MET signal — VBF Higgs → invisibles",
+        },
+        "MinBias_PU200": {
+            "tier": 1,
+            "query": "/MinBias_TuneCP5_14TeV*/Phase2Spring23*/GEN-SIM-DIGI-RAW-MINIAOD",
+            "target_events": 50_000,
+            "doc": "Pure pileup — no genuine MET; establishes the false-positive rate floor",
+        },
+        "SingleNeutrino_PU200": {
+            "tier": 1,
+            "query": "/SingleNeutrino*/Phase2Spring23*/GEN-SIM-DIGI-RAW-MINIAOD",
+            "target_events": 30_000,
+            "doc": "Zero genuine MET — defines model noise floor",
+        },
+        "WJetsToLNu_PU200": {
+            "tier": 2,
+            "query": "/WJetsToLNu_TuneCP5_14TeV*/Phase2Spring23*/GEN-SIM-DIGI-RAW-MINIAOD",
+            "target_events": 100_000,
+            "doc": "W → ℓν: broad MET spectrum, both real signal + pileup contributions",
+        },
+        "DYToLL_PU200": {
+            "tier": 2,
+            "query": "/DYToLL_M-50_TuneCP5_14TeV*/Phase2Spring23*/GEN-SIM-DIGI-RAW-MINIAOD",
+            "target_events": 50_000,
+            "doc": "Z + jets, no genuine MET — control sample for response calibration",
+        },
+        "SMS_T1tttt_PU200": {
+            "tier": 3,
+            "query": "/SMS-T1tttt_TuneCP5_14TeV*/Phase2Spring23*/GEN-SIM-DIGI-RAW-MINIAOD",
+            "target_events": 50_000,
+            "doc": "SUSY high-MET tail — currently under-represented",
+        },
+    },
 }
 
 

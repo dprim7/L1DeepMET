@@ -1,0 +1,34 @@
+diff --git a/NtupleProducer/python/runInputs131X.py b/NtupleProducer/python/runInputs131X.py
+index ad35013..eb0b070 100644
+--- a/NtupleProducer/python/runInputs131X.py
++++ b/NtupleProducer/python/runInputs131X.py
+@@ -157,3 +157,29 @@ process.e = cms.EndPath(process.out)
+ process.schedule = cms.Schedule([process.p,process.e])
+ 
+ process.out.outputCommands += [ "drop *_l1tHGCalVFEProducer_*_*", ]
++
++
++# ─── L1DeepMET CLI overrides ──────────────────────────────────────────────
++# Stage 1 of the L1DeepMET 2-step ntuple pipeline: re-emulate L1 from MINIAOD
++# → write inputs131X.root (the intermediate consumed by runPerformanceNTuple).
++# scripts/ntuple_produce.py drives this via:
++#   cmsRun runInputs131X.py \
++#       inputFiles=root://.../store/.../some_miniaod.root \
++#       maxEvents=1000 \
++#       outputFile=/tmp/inputs131X_NNNN.root
++# Parses sys.argv directly to avoid VarParsing's outputFile mangling.
++import os as _l1dmet_os, sys as _l1dmet_sys
++_l1dmet_overrides = {}
++for _arg in _l1dmet_sys.argv[1:]:
++    if "=" in _arg:
++        _k, _v = _arg.split("=", 1)
++        _l1dmet_overrides[_k] = _v
++if "inputFiles" in _l1dmet_overrides:
++    process.source.fileNames = cms.untracked.vstring(
++        _l1dmet_overrides["inputFiles"].split(",")
++    )
++if "maxEvents" in _l1dmet_overrides:
++    process.maxEvents.input = cms.untracked.int32(int(_l1dmet_overrides["maxEvents"]))
++if "outputFile" in _l1dmet_overrides:
++    process.out.fileName = cms.untracked.string(_l1dmet_overrides["outputFile"])
++# ───────────────────────────────────────────────────────────────────────────
