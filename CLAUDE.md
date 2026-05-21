@@ -26,6 +26,63 @@ exercises the full module end-to-end against a tiny synthetic input.
 If you find yourself writing code without writing a test first, **stop and
 write the test**, then continue.
 
+## Long-running jobs (STANDING ORDER)
+
+Anything that takes more than ~10 min wall — ntuple production loops, hyper-
+parameter sweeps, training runs, multi-sample preprocessing — **MUST be
+launched in a detached `screen` session**. The Claude Code harness's
+background-task tracking dies on SSH disconnect or harness restart; `screen`
+double-forks to PPID=1 (init/systemd) and survives anything short of host
+reboot.
+
+Pattern:
+
+```bash
+# 1. Write the job to a script (so screen has something concrete to launch
+#    and the user can re-run it after a host reboot from the same artifact).
+cat > /tmp/run_<jobname>.sh <<'EOF'
+#!/usr/bin/env bash
+set -uo pipefail                       # not -e — let later samples run past a failure
+source /cvmfs/cms.cern.ch/cmsset_default.sh
+export SCRAM_ARCH=el8_amd64_gcc12      # only for jobs that need cmsRun
+cd /home/users/dprimosc/CMSSW_14_2_0_pre2_L1DeepMET && eval $(scramv1 runtime -sh)
+cd /home/users/dprimosc/L1DeepMET/.claude/worktrees/<worktree>
+LOG=/tmp/<jobname>.log
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] BEGIN" >> $LOG
+<the actual command> >> $LOG 2>&1
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] END (exit=$?)" >> $LOG
+EOF
+chmod +x /tmp/run_<jobname>.sh
+
+# 2. Launch detached.
+screen -dmS <jobname> bash /tmp/run_<jobname>.sh
+
+# 3. Verify it's actually running.
+screen -ls
+pgrep -af "<a process the job spawns>"
+```
+
+For the user (or a future Claude session) to check or reattach:
+
+```bash
+screen -ls                       # list sessions
+screen -r <jobname>              # attach interactively (Ctrl-A D to detach)
+tail -f /tmp/<jobname>.log       # passive tail
+```
+
+Hard rules while attached: Ctrl-A then D to detach safely. **Never** Ctrl-C,
+`exit`, Ctrl-D, or Ctrl-\\ inside the screen — those kill the production.
+
+Resumability: cmsRun production via `scripts/ntuple_produce.py` writes a
+`state.json` per sample; re-running the same wrapper command after a crash
+only re-runs failed/missing jobs.
+
+UAF gotcha: TF processes spawn many internal threads at startup; running ≥2
+TF training processes in parallel hits per-process pthread limits with
+`EAGAIN`. For training sweeps, use `--max-parallel=1` (sequential) in
+`scripts/run_sweep.py`-style drivers. For cmsRun production, 16 parallel
+workers per sample is fine (each spawns a fresh CMSSW process tree).
+
 ## Project Overview
 
 **L1DeepMET** reconstructs Level-1 Missing Transverse Energy (MET) for the CMS detector at the HL-LHC using hardware-aware deep learning. Models are ultimately deployed on FPGAs via HLS4ML. The framework processes PUPPI particle candidates (up to 128 per event) and predicts MET as (px, py).
