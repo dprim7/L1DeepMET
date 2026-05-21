@@ -122,6 +122,73 @@ Goal: any future Claude session, after a refactor or after producing new
 ntuples, can run a single command and get fresh plots + tables. No
 human reconstruction of "what was that one Jupyter cell that made figure 3".
 
+## Evaluation metrics for architecture / recipe sweeps (STANDING ORDER)
+
+MAE / MSE / IQR on (px, py) are useful proxies during development — but they
+do not represent how the trained model is actually used by the L1 trigger.
+**Any architecture sweep, loss ablation, feature ablation, or
+"shall-we-ship-this" comparison must report the full L1 physics card**, not
+just a resolution number. Specifically:
+
+1. **Resolution × pT-bin** — IQR/2 of (pred − true) per gen-MET bin
+   `[0,50), [50,100), [100,200), [200,300), [300,400), [400,∞)`. Reveals
+   tail behaviour that a global IQR hides.
+2. **Response × pT-bin** — `mean(pred) / mean(true)` per bin (the project
+   uses ratio-of-means; see `reports/METRIC_FIX_addendum.md`). Tells you
+   whether the model scales gen MET linearly or shrinks it (Wiener
+   filter regression-to-mean).
+3. **ROC + AUC** — discrimination of `gen_MET > 200` vs `gen_MET < 50` on
+   the combined signal+background test set. AUC alone is a number; the
+   ROC curve is what shows whether the gain is at the working point of
+   interest.
+4. **Turn-on curve at a canonical threshold** — trigger efficiency
+   `ε(gen_MET; L1_threshold)` at e.g. L1 thresholds `{100, 150, 200} GeV`.
+   The steepness near threshold is what matters for trigger purity vs
+   efficiency, *not* the asymptote.
+5. **Rate vs threshold on MinBias_PU200** — events / second passing a
+   given L1 MET threshold (or the bin-normalized equivalent). The L1 MET
+   slice has a fixed kHz budget at HL-LHC; a model that improves
+   resolution but raises rate at the working-point threshold is not
+   actually better.
+6. **PUPPI baseline comparison** — every cell of the card reports the
+   model number AND the PUPPI number on the same events. Architecture
+   "wins" mean nothing without showing they're better than the
+   no-ML baseline that ships with the detector.
+
+These metrics live in `src/l1deepmet/metrics/physics.py`:
+
+```python
+from l1deepmet.metrics.physics import (
+    compute_resolution_metrics,   # resolution + response per bin
+    compute_trigger_metrics,       # scalar AUC
+    compute_roc_curve,             # ROC arrays for plotting
+    compute_turn_on,               # efficiency vs gen_MET at fixed reco threshold
+    compute_puppi_baseline,        # PUPPI MET from raw H5 features
+    full_physics_card,             # one call → everything above, JSON-safe scalar dict
+)
+```
+
+Plotting helpers live in `src/l1deepmet/plotting.py`
+(`plot_roc_curve`, `plot_turn_on_curves`, `plot_trigger_rates`,
+`plot_combined_rates`). Use these — don't roll your own.
+
+Rate evaluation needs a different dataset than the signal MAE/AUC. Signal
+samples (VBFHToInvisible, TT semilep, SMS T1tttt) measure the trigger
+efficiency at a threshold; **`MinBias_PU200` is what measures the rate at
+that same threshold** (background passing rate). Both are in the current
+production tag `26May22_142_extended_20k_v0`.
+
+The decision quantity for "is this architecture better" is a Pareto
+question on three axes: **(working-point efficiency on signal, rate on
+MinBias, FPGA resources)**. A model that wins on one and loses on
+another is not unambiguously better — say so explicitly when you report
+it. Same hardware-aware principle in the experimenter skill: state the
+constraint with every number.
+
+(The development-iteration loop *can* use MAE as a fast proxy — it
+correlates with the physics card and is cheaper to compute. But anything
+that gets cited as evidence in a report must include the card.)
+
 ## Project Overview
 
 **L1DeepMET** reconstructs Level-1 Missing Transverse Energy (MET) for the CMS detector at the HL-LHC using hardware-aware deep learning. Models are ultimately deployed on FPGAs via HLS4ML. The framework processes PUPPI particle candidates (up to 128 per event) and predicts MET as (px, py).
