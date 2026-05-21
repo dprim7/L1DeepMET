@@ -1,5 +1,5 @@
 diff --git a/NtupleProducer/python/runPerformanceNTuple.py b/NtupleProducer/python/runPerformanceNTuple.py
-index 0168b78..16fa3b8 100644
+index 0168b78..72defa8 100644
 --- a/NtupleProducer/python/runPerformanceNTuple.py
 +++ b/NtupleProducer/python/runPerformanceNTuple.py
 @@ -748,14 +748,40 @@ if False:
@@ -44,7 +44,7 @@ index 0168b78..16fa3b8 100644
                                             ),
                                         )
      monitorPerf("L1PF", "l1tLayer1:PF", saveCands=True)
-@@ -774,3 +800,62 @@ def saveGenCands():
+@@ -774,3 +800,66 @@ def saveGenCands():
                                             ),
                                        )
      process.p += process.gencandTable
@@ -63,8 +63,12 @@ index 0168b78..16fa3b8 100644
 +    # model can compute its own z0_rel per candidate (PUPPI's principal
 +    # PU-rejection discriminant). Uses the standard L1T vertex emulator
 +    # already in the process path (extraPFStuff).
++    # NB: in CMSSW_14_2_0_pre2 the default `l1VertexCollectionName` is
++    # "L1Vertices" (uppercase L), so VertexProducer.cc emits the
++    # productInstanceName "L1VerticesEmulation". Older 14_0_X used the
++    # lowercase "l1vertices" — don't copy old recipes' lowercase InputTag.
 +    process.l1deepmetVtxTable = cms.EDProducer("VertexWordFlatTableProducer",
-+        src = cms.InputTag("l1tVertexFinderEmulator", "l1verticesEmulation"),
++        src = cms.InputTag("l1tVertexFinderEmulator", "L1VerticesEmulation"),
 +        name = cms.string("L1Vtx"),
 +        cut = cms.string(""),
 +        doc = cms.string("L1 primary vertices from emulator (L1DeepMET extended)"),
