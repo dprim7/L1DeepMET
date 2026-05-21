@@ -83,6 +83,45 @@ TF training processes in parallel hits per-process pthread limits with
 `scripts/run_sweep.py`-style drivers. For cmsRun production, 16 parallel
 workers per sample is fine (each spawns a fresh CMSSW process tree).
 
+## Reports (STANDING ORDER)
+
+Anything cited as evidence in a `reports/<study>/report.md` — every plot,
+every table, every number quoted inline — **must be regeneratable from a
+script in that same `reports/<study>/scripts/` directory**, given only the
+inputs that are committed (raw JSONs, aggregated CSVs) or referenced by
+path (H5 files, ntuple dirs on /ceph).
+
+Layout convention for a study:
+
+```
+reports/<study>/
+  PLAN.md          # design pre-registered before measurement
+  report.md        # results + interpretation; ends with a "Reproducing" section
+  scripts/         # train_one.py, run_sweep.py, analyze.py — checked in
+  results/raw/     # per-cell JSON + log from the sweep — checked in
+  results/         # aggregated CSVs, fit JSON — derived; OK to regenerate
+  plots/           # PNG/SVG — derived; OK to regenerate
+```
+
+Rules:
+
+- **Plots**: every PNG/SVG under `plots/` must be produced by an explicit
+  function call in `scripts/analyze.py` (or equivalent). One-off
+  interactive notebook output that isn't checked in does NOT count as
+  evidence — it can't be re-run after a refactor or with new data.
+- **Tables / inline numbers**: must be computable from a CSV under
+  `results/` or directly from raw JSONs there. Don't hand-copy numbers
+  from a terminal session.
+- **Reproducing section** at the end of `report.md` must give the exact
+  commands that take inputs → plots+tables, in order.
+- **Test it**: after writing the report, delete `plots/*` and re-run
+  the analysis script; the plots must come back byte-similar. (We do this
+  before committing.)
+
+Goal: any future Claude session, after a refactor or after producing new
+ntuples, can run a single command and get fresh plots + tables. No
+human reconstruction of "what was that one Jupyter cell that made figure 3".
+
 ## Project Overview
 
 **L1DeepMET** reconstructs Level-1 Missing Transverse Energy (MET) for the CMS detector at the HL-LHC using hardware-aware deep learning. Models are ultimately deployed on FPGAs via HLS4ML. The framework processes PUPPI particle candidates (up to 128 per event) and predicts MET as (px, py).
