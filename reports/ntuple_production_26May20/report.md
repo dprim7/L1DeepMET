@@ -254,7 +254,126 @@ the wait.
   with our patched recipe and confirming the `VertexWordFlatTableProducer`
   plugin is registered.
 
-## 6. Open follow-ups not addressed
+## 6. UPDATE — 21 May 2026, pipeline corrected and smoke-tested green
+
+Yesterday's report had two errors which are now fixed:
+
+1. **Wrong CMSSW version.** I assumed 25Jul8 was produced from Phase2Spring23
+   based on the directory naming, and pivoted to 14_0_X + Spring23. Reading
+   the actual provenance (`edmProvDump` on a 25Jul8 perfNano) shows:
+   - SIM/HLT/RECO: `CMSSW_14_0_9` + GlobalTag `140X_mcRun4_realistic_v4`
+   - FastPUPPI IN/RESP: `CMSSW_14_2_0_pre2` + GlobalTag `141X_mcRun4_realistic_v3`
+   - Geometry: `D110`
+
+   So 25Jul8 = Phase2Spring24 simulation, processed with FastPUPPI 14_2_X
+   in CMSSW_14_2_0_pre2. The 14_0_X / Spring23 pivot was wrong.
+
+2. **Wrong vertex InputTag instance name.** All FastPUPPI scouting examples
+   hardcode `cms.InputTag("l1tVertexFinderEmulator","l1verticesEmulation")`
+   (lowercase 'l1vertices'), but in CMSSW_14_2_0_pre2's
+   `L1Trigger/VertexFinder/python/l1tVertexProducer_cfi.py` the default
+   `l1VertexCollectionName` is `"L1Vertices"` (uppercase L). Carrying the
+   lowercase form into 14_2_X gives ProductNotFound at runtime.
+
+### What's actually committed and verified now (commit `359b124`)
+
+- Submodule pinned to `external/FastPUPPI` branch `14_2_X` (f661971).
+- Stage 1 recipe: `runInputs140X.py` (D110 + 141X GT, matches Spring24).
+- Stage 2 recipe: `runPerformanceNTuple.py` extended with our saveCands
+  moreVariables + `VertexWordFlatTableProducer` (uppercase InputTag) +
+  sys.argv overrides.
+- Wrapper at `scripts/ntuple_produce.py` runs stage1 → stage2 per file.
+- CMSSW area at `/home/users/dprimosc/CMSSW_14_2_0_pre2_L1DeepMET/` with
+  FastPUPPI symlinked to our patched submodule; built clean.
+
+End-to-end smoke (1 DYToLL_PU200 MINIAOD file, 5 events):
+
+```
+[1/1] ✓ 0000_d47130cf-...  (564s = 324s stage1 + 240s stage2)
+Done: 1 ok, 0 failed.
+```
+
+perfNano output (1.4 MB, 139 branches, 5 events) contains every extended
+branch we asked for:
+
+```
+Per-candidate (14/14 present, real values):
+  L1PuppiCands_pt, L1PuppiCands_z0           (vz=1.65, 2.85, 1.20, ...)
+  L1PuppiCands_hwPt, _hwEta, _hwPhi          (8, 64, 9 — FPGA-quantized)
+  L1PuppiCands_hwPuppiWeight, _hwQual
+  L1PuppiCands_trackChi2RPhi, _RZ, _Bend     (0 for neutrals, real for tracks)
+  L1PuppiCands_trackNStubs, _trackMvaQual
+  L1PuppiCands_caloEta, _caloPhi
+  L1PuppiCands_clPuId, _clEmId, _clPt, _clEmEt   (-1 for charged, real for clusters)
+
+Event-level (3/3 vertex + 4/4 alt-MET):
+  L1Vtx_z0=1.20, L1Vtx_sumPt=77 GeV, nL1Vtx=1
+  L1PuppiMet_pt=22.4, L1PFMet_pt, L1CaloMet_pt, L1TKMet_pt
+  L1Layer2Met_pt — currently OFF (line commented in patch; 14_2_X has
+                                  addCTL2Met available — 1-line uncomment
+                                  in patches/runPerformanceNTuple.patch to
+                                  enable, then re-build is not needed,
+                                  just `scripts/apply_ntuple_recipe.sh apply`)
+```
+
+### Disk availability (Phase2Spring24 PU200, 21 May 2026)
+
+```
+DYToLL_PU200             5/5 disk  ✓  (T2_ES_CIEMAT, T2_UK_London_IC) — 989k events
+MinBias_PU200            0/5 disk  (tape)  — 2.0M events
+TT_PU200                 0/5 disk  (tape)  — 300k events
+VBF_HToInvisible_PU200   0/5 disk  (tape)  — ~200k events
+WJetsToLNu_PU200         0/5 disk  (tape)  — 34k events
+SingleNeutrino_PU200     — not in Phase2Spring24
+SMS_T1tttt_PU200         — not in Phase2Spring24
+```
+
+### Cost model
+
+Smoke ran 5 events in 564s ≈ 113s/event (stage 1 ~65s, stage 2 ~48s; both
+have ~30-60s per-job startup that doesn't amortize per-event for tiny jobs).
+With 16 parallel workers and ~50 events per cmsRun job (so startup amortizes),
+expect roughly:
+
+- DYToLL 50k events ≈ 18 hr wall on 16 workers
+- DYToLL 200k events ≈ 3 days
+- TT 200k events (once recalled) ≈ 3 days
+- All 5 samples to 50-200k each ≈ 1–2 weeks of wall on a single 16-core node
+
+For anything bigger, HTCondor (Phase 3 in the original plan) is worth the
+investment — 200 condor slots collapses the same workload to 1 wall day.
+
+### Recommended next steps for the user
+
+1. **Submit Rucio recalls** for TT_PU200, VBF_HToInvisible_PU200,
+   MinBias_PU200, WJetsToLNu_PU200. Typical 1–3 days.
+2. **In parallel**: kick off DYToLL_PU200 production at whatever event budget
+   you want. Suggested smoke-then-scale:
+   ```bash
+   source /cvmfs/cms.cern.ch/cmsset_default.sh
+   export SCRAM_ARCH=el8_amd64_gcc12
+   cd ~/CMSSW_14_2_0_pre2_L1DeepMET && eval $(scramv1 runtime -sh)
+   cd ~/L1DeepMET/.claude/worktrees/jolly-lalande-3e5006
+
+   # First a 100-event sanity check (~10 min wall), confirms 1 worker works:
+   scripts/ntuple_produce.py run --sample DYToLL_PU200 --campaign Phase2Spring24 \
+       --tag 26May21_142_extended_v0 --n-events 100 --workers 1 --max-files 10 \
+       --output-root /ceph/cms/store/user/dprimosc/l1deepmet
+
+   # Then the real run, e.g. 50k events on 16 workers (~18 hours):
+   scripts/ntuple_produce.py run --sample DYToLL_PU200 --campaign Phase2Spring24 \
+       --tag 26May21_142_extended_v0 --n-events 50000 --workers 16 \
+       --output-root /ceph/cms/store/user/dprimosc/l1deepmet
+   ```
+   Use `screen` or `tmux` — the wrapper is resumable via state.json if
+   you ctrl-C and re-launch.
+3. **Once tape recalls land**, repeat step 2 for each sample.
+4. **After all production**: `scripts/preprocess.py --feature-layout extended
+   --tag 26May21_142_extended_v0 --data-root /ceph/.../26May21_142_extended_v0`
+   produces the new H5 with all 26 candidate + 13 event features populated
+   from real data (not zero-filled as the Track B placeholder was).
+
+## 7. Open follow-ups not addressed
 
 - L1Layer2 MET column (dropped because 14_0_X has no `addCTL2Met`). If/when
   the pipeline moves back to 15_1_X (after upstream catches up), uncomment
