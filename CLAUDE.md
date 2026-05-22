@@ -127,67 +127,115 @@ human reconstruction of "what was that one Jupyter cell that made figure 3".
 MAE / MSE / IQR on (px, py) are useful proxies during development — but they
 do not represent how the trained model is actually used by the L1 trigger.
 **Any architecture sweep, loss ablation, feature ablation, or
-"shall-we-ship-this" comparison must report the full L1 physics card**, not
-just a resolution number. Specifically:
+"shall-we-ship-this" comparison must report the full L1 physics card.**
+
+The card has three tiers: **required** for *any* reported comparison;
+**strongly recommended where relevant** (almost always at least one
+applies); **required for ship decisions only**.
+
+### Tier 1 — required for every sweep
 
 1. **Resolution × pT-bin** — IQR/2 of (pred − true) per gen-MET bin
    `[0,50), [50,100), [100,200), [200,300), [300,400), [400,∞)`. Reveals
    tail behaviour that a global IQR hides.
-2. **Response × pT-bin** — `mean(pred) / mean(true)` per bin (the project
-   uses ratio-of-means; see `reports/METRIC_FIX_addendum.md`). Tells you
-   whether the model scales gen MET linearly or shrinks it (Wiener
-   filter regression-to-mean).
-3. **ROC + AUC** — discrimination of `gen_MET > 200` vs `gen_MET < 50` on
-   the combined signal+background test set. AUC alone is a number; the
-   ROC curve is what shows whether the gain is at the working point of
-   interest.
-4. **Turn-on curve at a canonical threshold** — trigger efficiency
-   `ε(gen_MET; L1_threshold)` at e.g. L1 thresholds `{100, 150, 200} GeV`.
-   The steepness near threshold is what matters for trigger purity vs
-   efficiency, *not* the asymptote.
-5. **Rate vs threshold on MinBias_PU200** — events / second passing a
-   given L1 MET threshold (or the bin-normalized equivalent). The L1 MET
-   slice has a fixed kHz budget at HL-LHC; a model that improves
-   resolution but raises rate at the working-point threshold is not
-   actually better.
-6. **PUPPI baseline comparison** — every cell of the card reports the
-   model number AND the PUPPI number on the same events. Architecture
-   "wins" mean nothing without showing they're better than the
-   no-ML baseline that ships with the detector.
+2. **Response × pT-bin** — ratio-of-means convention (`mean(pred)/mean(true)`
+   per bin; see `reports/METRIC_FIX_addendum.md`). Catches Wiener-filter
+   regression-to-mean (the failure that drove `loss_diagnosis_apr2026`).
+3. **φ resolution** — IQR/2 of `phi(pred) − phi(true)` (with proper
+   `±π` wrap). Mode-1 models sometimes get magnitude right and direction
+   random (seed-dependent failure mode in `dense_architecture_baseline_apr2026`);
+   φ catches it. Bimodal-across-seeds is itself a result.
+4. **ROC + AUC** — `gen_MET > 200` vs `gen_MET < 50`. Report the full
+   curve, not just the scalar — AUC of 0.97 vs 0.98 can hide that one
+   model is better at the actual working point and worse elsewhere.
+5. **Turn-on curves at canonical L1 thresholds** — `ε(gen_MET; L1_thr)`
+   at L1 thresholds `{100, 150, 200} GeV`. *Steepness near threshold* is
+   what matters for purity-vs-efficiency, not the asymptote.
+6. **Rate vs threshold on MinBias_PU200** — events / s passing a given L1
+   MET threshold. The L1 MET slice has a fixed kHz budget; resolution
+   gains that *raise* the rate at the working point are not real wins.
+7. **Working-point efficiency** — this is the **single number that
+   actually decides whether the trigger is good**. From the rate curve,
+   find the threshold T that gives the L1 budget (assume ~4 kHz for the
+   MET slice unless the user gives a number); at that T, report the
+   signal efficiency per sample. Without this, the rate curve and the
+   turn-on curve are individually meaningless.
+8. **PUPPI baseline on every line** — every row of the card reports
+   model AND PUPPI on the same events. Without that, "ML wins" is
+   meaningless — PUPPI is what ships if we don't.
 
-These metrics live in `src/l1deepmet/metrics/physics.py`:
+These all come out of one function:
 
 ```python
 from l1deepmet.metrics.physics import (
-    compute_resolution_metrics,   # resolution + response per bin
-    compute_trigger_metrics,       # scalar AUC
-    compute_roc_curve,             # ROC arrays for plotting
-    compute_turn_on,               # efficiency vs gen_MET at fixed reco threshold
-    compute_puppi_baseline,        # PUPPI MET from raw H5 features
-    full_physics_card,             # one call → everything above, JSON-safe scalar dict
+    compute_resolution_metrics,   # resolution + response per bin (1, 2)
+    compute_trigger_metrics,       # scalar AUC (4)
+    compute_roc_curve,             # ROC arrays for plotting (4)
+    compute_turn_on,               # efficiency vs gen_MET at fixed reco thr (5)
+    compute_puppi_baseline,        # PUPPI MET from raw H5 features (8)
+    full_physics_card,             # one call → everything above, JSON-safe
 )
 ```
 
-Plotting helpers live in `src/l1deepmet/plotting.py`
-(`plot_roc_curve`, `plot_turn_on_curves`, `plot_trigger_rates`,
-`plot_combined_rates`). Use these — don't roll your own.
+Plotting: `src/l1deepmet/plotting.py` has `plot_roc_curve`,
+`plot_turn_on_curves`, `plot_trigger_rates`, `plot_combined_rates`.
 
-Rate evaluation needs a different dataset than the signal MAE/AUC. Signal
-samples (VBFHToInvisible, TT semilep, SMS T1tttt) measure the trigger
-efficiency at a threshold; **`MinBias_PU200` is what measures the rate at
-that same threshold** (background passing rate). Both are in the current
-production tag `26May22_142_extended_20k_v0`.
+Rate eval needs MinBias_PU200 (in the current `26May22_142_extended_20k_v0`
+production); signal samples (VBF, TT, SMS) give efficiency. Working-point
+efficiency joins them.
 
-The decision quantity for "is this architecture better" is a Pareto
-question on three axes: **(working-point efficiency on signal, rate on
-MinBias, FPGA resources)**. A model that wins on one and loses on
-another is not unambiguously better — say so explicitly when you report
-it. Same hardware-aware principle in the experimenter skill: state the
-constraint with every number.
+### Tier 2 — strongly recommended (almost always one applies)
 
-(The development-iteration loop *can* use MAE as a fast proxy — it
-correlates with the physics card and is cheaper to compute. But anything
-that gets cited as evidence in a report must include the card.)
+9. **Per-PU dependence** — resolution / response / working-point efficiency
+   binned by `nL1Vtx` (we save this in the extended H5). HL-LHC oscillates
+   between PU 140 and PU 220; a model that wins at average PU and breaks
+   at the tails is an operational regression. The vertex producer is in
+   the patched recipe so the data is there.
+10. **Asymmetric tail behaviour** — fakes (reco ≫ true; eats rate) and
+    misses (reco ≪ true; kills efficiency) are NOT the same problem.
+    IQR/2 is symmetric and hides this. Report bias and high-side /
+    low-side tail counts separately (e.g., `P(reco > true + 50 GeV)`
+    and `P(reco < true − 50 GeV)`).
+11. **Per-eta region** — HGCal endcap vs barrel calo behave differently.
+    A weak spot in one region hides in a global metric. Compute Tier-1
+    quantities for `|eta| < 1.5` and `|eta| > 1.5` separately when an
+    architecture changes how it uses HGCal features (e.g., the cl* /
+    HGCal-ID extended features).
+12. **PUPPI-ablation** — at eval time, set `puppi_weight = 1.0` for all
+    candidates. Re-run the card. If the model doesn't degrade, it isn't
+    using PUPPI — it's re-deriving (worse) PU rejection from raw inputs.
+    Cheap test, catches a specific failure mode.
+
+### Tier 3 — required only for ship decisions
+
+13. **Quantization gap** — float vs QKeras (per-tensor int) vs HGQ
+    (per-bit gradient). Resolution numbers in float don't ship —
+    quantized numbers do. Use `src/l1deepmet/quantization/` (currently
+    stub) or QAT recipes in the loss/output_head ablation reports.
+14. **Resource + latency** — HLS4ML estimate (LUTs, FFs, DSPs, BRAM) on
+    the target device (VU13P, clock 320 MHz) and latency in ns. State
+    the synthesis tool + version; estimates from `hls4ml` are not the
+    same as place-and-routed numbers.
+
+### The decision quantity
+
+The thing that decides "ship this" is a Pareto on
+**(working-point signal efficiency, rate on MinBias, FPGA resources)**.
+A model that wins on one axis and loses on another is *not*
+unambiguously better — say so explicitly when reporting it. (Same
+hardware-aware principle as in the experimenter skill: state the
+constraint with every number.)
+
+### Development-iteration shortcut
+
+Inside the inner loop of an experiment (e.g., the event-count
+justification sweep), MAE is a fine fast proxy — it correlates with the
+Tier-1 quantities and is much cheaper to compute per epoch. But anything
+cited as evidence in a `reports/<study>/report.md` must include the
+Tier-1 card. Architecture / loss / feature ablations: Tier 1 + at least
+one Tier-2 metric chosen for relevance (e.g., per-PU for a feature that
+should help PU rejection; PUPPI-ablation for any model that touches
+`puppi_weight`).
 
 ## Project Overview
 
