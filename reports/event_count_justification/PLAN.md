@@ -2,7 +2,7 @@
 
 **Date.** 2026-05-21
 **Branch.** `claude/jolly-lalande-3e5006`
-**Author.** Claude (experimenter), human-in-the-loop dprimosc
+**Author.** dprimosc
 
 ## Question (concrete, falsifiable)
 
