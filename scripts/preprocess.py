@@ -30,6 +30,7 @@ import numpy as np # type: ignore
 from l1deepmet.data.preprocessing import (
     load_samples_to_numpy,
     load_samples_to_numpy_extended,
+    sanitize_extreme_values,
     select_events,
     preprocess_data,
     combine_shuffle_split,
@@ -167,6 +168,30 @@ def main():
         logger.info(f"Extended layout produced {len(feature_layout)} per-candidate features: {feature_layout}")
         if event_feature_layout:
             logger.info(f"Extended layout produced {len(event_feature_layout)} event-level features: {event_feature_layout}")
+        # Sanitize FLT_MAX-class sentinels (some L1 cluster MVAs return
+        # ±10^38 for invalid inputs — would silently break normalization).
+        # Threshold 1e6 is well above legitimate physics (hwPt ≤ ~3200,
+        # MET ≤ a few TeV) and well below FLT_MAX. Applies to both the
+        # per-candidate features AND event-level features.
+        logger.info("Sanitizing extreme/non-finite values (|x| > 1e6 → 0, NaN/Inf → 0)...")
+        sanitized = {}
+        total_touched_cand = np.zeros(len(feature_layout), dtype=np.int64)
+        total_touched_evt  = np.zeros(len(event_feature_layout), dtype=np.int64)
+        for name, (X, EX, Y) in results.items():
+            X_clean,  s_cand = sanitize_extreme_values(X)
+            EX_clean, s_evt  = sanitize_extreme_values(EX) if EX.size else (EX, {"n_touched_per_feature": np.zeros(0, np.int64)})
+            sanitized[name] = (X_clean, EX_clean, Y)
+            total_touched_cand += s_cand["n_touched_per_feature"]
+            if EX.size:
+                total_touched_evt += s_evt["n_touched_per_feature"]
+        # Log non-zero touch counts so the user sees what was hit
+        for i, n in enumerate(total_touched_cand):
+            if n > 0:
+                logger.warning(f"  sanitized candidate slot {i} ({feature_layout[i]}): {int(n)} cells replaced")
+        for i, n in enumerate(total_touched_evt):
+            if n > 0:
+                logger.warning(f"  sanitized event slot {i} ({event_feature_layout[i]}): {int(n)} cells replaced")
+        results = sanitized
     else:
         event_feature_layout = []
         results = load_samples_to_numpy(

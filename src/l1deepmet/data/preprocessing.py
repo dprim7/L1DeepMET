@@ -146,6 +146,39 @@ def _safe_get(arrays: Dict[str, Any], branch: str, max_pf: int,
     return np.zeros_like(ref)
 
 
+def sanitize_extreme_values(
+    X: np.ndarray,
+    threshold: float = 1.0e6,
+    replace: float = 0.0,
+) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
+    """Clamp |x| > threshold or non-finite (NaN/Inf) to `replace`.
+
+    Some L1 cluster-ID MVAs (e.g. ``pfCluster.egVsPUMVAOut``,
+    ``egVsPionMVAOut``) return numerical sentinels on the order of ±FLT_MAX
+    (~±3.4e+38) when their inputs are invalid. Those values silently
+    poison downstream normalization (std → ∞, gradients → NaN) without
+    tripping a NaN/Inf check, because the floats are still finite — just
+    enormous.
+
+    The default threshold (1e6) is well above any legitimate physics value
+    at L1 (hwPt maxes at ~3200, trackChi2 cuts ≤20, MET pt ≤ a few TeV)
+    and well below FLT_MAX, so legitimate features pass through untouched
+    while sentinels get replaced.
+
+    Returns a sanitized COPY (input is not mutated) plus a stats dict
+    with ``n_touched_per_feature`` — a 1-D array of length F summing
+    touched cells over every axis except the last.
+    """
+    mask = (~np.isfinite(X)) | (np.abs(X) > threshold)
+    if mask.ndim >= 2:
+        axes = tuple(range(mask.ndim - 1))
+        n_touched = mask.sum(axis=axes)
+    else:
+        n_touched = mask.astype(np.int64)
+    Y = np.where(mask, np.asarray(replace, dtype=X.dtype), X)
+    return Y, {"n_touched_per_feature": n_touched}
+
+
 def HCalDepth(
     hcal_first1: np.ndarray, hcal_first3: np.ndarray, hcal_first5: np.ndarray
 ) -> np.ndarray:
@@ -344,6 +377,16 @@ def load_samples_to_numpy_extended(
         "phi": ("L1PuppiCands_phi", 0.0),
         "puppi_weight": ("L1PuppiCands_puppiWeight", 0.0),
         "puppiWeight": ("L1PuppiCands_puppiWeight", 0.0),
+        # `dxy` is the L1 PF candidate's impact-parameter field. The
+        # underlying l1t::PFCandidate has setDxy()/dxy() in CMSSW_14_2_X but
+        # the emulator (L1TCorrelatorLayer1Producer + linpuppi) currently
+        # never writes a non-zero value to it — see the dataset card warning.
+        # We expose the column anyway for forward-compatibility; values are
+        # zero on every real candidate today.
+        "dxy":    ("L1PuppiCands_dxy",    0.0),
+        # `dxyErr` is a legacy alias retained for back-compat with old
+        # 25Jul8 ntuples (which had an L1PuppiCands_dxyErr branch that was
+        # also uniformly zero); not present in 14_2_X production output.
         "dxyErr": ("L1PuppiCands_dxyErr", 1000.0),
         "mass": ("L1PuppiCands_mass", 0.0),
         "z0": ("L1PuppiCands_z0", 0.0),
