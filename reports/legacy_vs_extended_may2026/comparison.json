@@ -1,0 +1,67 @@
+{
+  "legacy": {
+    "slots": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "model": "outputs/models/legacy_eq_w64d3_seed42/model.keras",
+    "metrics": {
+      "mae_xy": 34.148738861083984,
+      "mse_xy": 2266.588134765625,
+      "met_pt_resolution": 43.43276817321778,
+      "met_x_resolution": 38.7897785949707,
+      "met_y_resolution": 38.88021781921387,
+      "mean_response": 1.3474565990734786,
+      "phi_resolution": 1.5169109249114991,
+      "response_50_100": 1.3584752527812787,
+      "response_100_200": 1.2504130084009497,
+      "response_200_300": 1.3431548008807168,
+      "response_300_400": 1.4377833342309696,
+      "response_400_inf": 1.0
+    }
+  },
+  "extended": {
+    "slots": [
+      0,
+      1,
+      2,
+      3,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25
+    ],
+    "model": "outputs/models/extended_w64d3_seed42/model.keras",
+    "metrics": {
+      "mae_xy": 26.43403434753418,
+      "mse_xy": 1600.4215087890625,
+      "met_pt_resolution": 59.42319435119629,
+      "met_x_resolution": 27.922051963806133,
+      "met_y_resolution": 28.435603179931633,
+      "mean_response": 0.4689510968095298,
+      "phi_resolution": 1.716368896961212,
+      "response_50_100": 0.6100993904135624,
+      "response_100_200": 0.47092121526661024,
+      "response_200_300": 0.4383292120965021,
+      "response_300_400": 0.3564545694614443,
+      "response_400_inf": 1.0
+    }
+  },
+  "n_test_events": 9673
+}
