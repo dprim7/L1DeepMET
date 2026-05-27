@@ -32,6 +32,16 @@ def parse_args():
                    help="Divide MET targets by this value to normalize scale (default: 100)")
     p.add_argument("--mode", type=int, choices=[0, 1, 2], default=None,
                    help="Training mode: 0=direct, 1=per-particle weight, 2=event weight")
+    p.add_argument("--continuous-slots", default=None,
+                   help="Comma-separated slot indices from the H5 features array to use as "
+                        "continuous inputs (extended layout only). Example: "
+                        "'0,1,2,3,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25' "
+                        "uses pt/eta/phi/puppi + every extended slot except momentum (4,5) "
+                        "and categoricals (6,7). When omitted, the legacy 5-feature slicing "
+                        "(slots 0-4 as continuous, 5-6 as momentum, 7-8 as categoricals) "
+                        "applies — only valid for legacy 9-feature H5s.")
+    p.add_argument("--units", default=None,
+                   help="Comma-separated dense layer widths, e.g. '64,64,64' for w64_d3.")
     return p.parse_args()
 
 
@@ -51,6 +61,18 @@ def main():
         cfg.set("optimizer.learning_rate", args.lr)
     if args.mode is not None:
         cfg.set("training.mode", args.mode)
+    if args.units is not None:
+        cfg.set("model.units", [int(u) for u in args.units.split(",")])
+
+    # Continuous-slot routing (extended H5 layout). When set, the loader
+    # picks the given slots as continuous inputs and the factory builds an
+    # Input layer of matching width.
+    continuous_slots = None
+    if args.continuous_slots is not None:
+        continuous_slots = [int(s) for s in args.continuous_slots.split(",")]
+        cfg.set("data.continuous_slots", continuous_slots)
+        cfg.set("data.n_continuous", len(continuous_slots))
+        logger.info(f"Using {len(continuous_slots)} continuous slots: {continuous_slots}")
 
     batch_size = cfg.get("training.batch_size") or cfg.get("training", {}).get("batch_size", 256)
     normfac = args.normfac
@@ -58,8 +80,14 @@ def main():
     # Data
     logger.info(f"Loading data from {args.data_dir} (normfac={normfac})")
     loader = H5DataLoader(args.data_dir)
-    train_ds = loader.create_tf_dataset("train", batch_size=batch_size, shuffle=True, normfac=normfac)
-    val_ds   = loader.create_tf_dataset("val",   batch_size=batch_size, shuffle=False, normfac=normfac)
+    train_ds = loader.create_tf_dataset(
+        "train", batch_size=batch_size, shuffle=True, normfac=normfac,
+        continuous_slots=continuous_slots,
+    )
+    val_ds   = loader.create_tf_dataset(
+        "val", batch_size=batch_size, shuffle=False, normfac=normfac,
+        continuous_slots=continuous_slots,
+    )
 
     # Model
     model = build_dense(cfg.to_dict())

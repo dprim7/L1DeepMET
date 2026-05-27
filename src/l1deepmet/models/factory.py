@@ -5,7 +5,10 @@ from tensorflow.keras.layers import Dense, BatchNormalization, Activation, Globa
 
 def build_dense(cfg: dict)->Model:
         N = cfg["data"]["maxNPF"]
-        x_cont = tf.keras.Input(shape=(N, 5), name="continuous_inputs")
+        # n_continuous defaults to 5 (legacy layout). Extended layout passes
+        # an explicit value matching len(data.continuous_slots).
+        n_cont = int(cfg.get("data", {}).get("n_continuous", 5))
+        x_cont = tf.keras.Input(shape=(N, n_cont), name="continuous_inputs")
         x_pxpy = tf.keras.Input(shape=(N, 2), name="momentum_inputs")
 
         inputs = [x_cont, x_pxpy]
