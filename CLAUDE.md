@@ -26,6 +26,35 @@ exercises the full module end-to-end against a tiny synthetic input.
 If you find yourself writing code without writing a test first, **stop and
 write the test**, then continue.
 
+**A test counts only if it does all of these.** "Expected behaviour" above
+is not a vague aspiration — operationalise it:
+
+1. **Assert specific values, not just "doesn't crash"**. `assert
+   stats["max_real"] == 25.0`, not `compute(...)` alone. A test with no
+   `assert` on the function's output is a smoke check, not a test, and
+   doesn't satisfy the standing order.
+2. **Use a synthetic toy where you know the answer**. Construct inputs
+   small enough that you computed the expected output by hand
+   (10 events × 4 candidates is plenty for a unit test), then assert
+   the function returns it. Real data is for integration tests, not
+   unit tests.
+3. **Cover the categories that matter for this function**:
+   - happy path (typical input → expected output),
+   - at least one edge case (empty input, all-zero, single element,
+     boundary value),
+   - explicit invariants (output shape, sign, range, monotonicity —
+     assert them so they stay true after refactors),
+   - known failure modes (does it raise the right exception on bad
+     input).
+
+`assert callable(foo)` and `foo(0)`-with-no-assertion do NOT count.
+Stubs that raise `NotImplementedError` may have a `pytest.skip(reason=...)`
+placeholder until the design is fixed (see
+`tests/unit/metrics/test_physics_card_stubs.py` for the pattern) — but
+the placeholder must be a `skip`, not a stand-in test, and replacing
+the `skip` with a real behavioural test is part of the design-handoff
+checklist in `reports/physics_card_design/DESIGN.md`.
+
 ## Long-running jobs (STANDING ORDER)
 
 Anything that takes more than ~10 min wall — ntuple production loops, hyper-
