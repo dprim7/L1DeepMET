@@ -122,6 +122,53 @@ Goal: any future Claude session, after a refactor or after producing new
 ntuples, can run a single command and get fresh plots + tables. No
 human reconstruction of "what was that one Jupyter cell that made figure 3".
 
+## Dataset card (STANDING ORDER)
+
+Every preprocessed dataset under `outputs/preprocessed/<tag>/` MUST have
+a `dataset_card.json` + `dataset_card.md` next to its H5 files. They're
+produced automatically by `scripts/preprocess.py` (final step before
+control plots); if you're touching the preprocessor and they don't get
+emitted, that's a regression to fix, not an OK-as-long-as-the-H5-exists.
+
+What's in the card (schema v1, see `src/l1deepmet/data/dataset_card.py`):
+
+- **Provenance**: git SHA, preprocess args, source ntuple dir, split seed.
+- **Composition**: total event count; per-split counts + fractions;
+  per-sample loaded vs requested (so capped samples are visible).
+- **Schema**: feature layout, event feature layout, all tensor shapes.
+- **Per-candidate feature stats** on the train split: median, MAD, min,
+  max, %NaN, %Inf — separating real candidates (`pt > 0`) from pad
+  zeros so sparse columns aren't pulled to zero.
+- **Per-event feature stats**: mean, std, range, %zero.
+- **Target stats**: gen MET distribution, per-pT-bin event counts.
+- **Top-level warnings**: aggregated from all per-feature and per-sample
+  warnings (NaN/Inf, all-zero on real candidates, extreme magnitudes,
+  sample-load shortfalls). These are what a reviewer reads first.
+
+What the card is FOR:
+
+- **Schema-validate training scripts**: load the card, assert the
+  features layout matches what the model expects. Fail-fast on
+  swapped-tag mistakes.
+- **Cite numbers in reports**: don't hand-copy "we trained on 87 312
+  events" from a terminal — pull it from `dataset_card.json`. Numbers
+  in `reports/<study>/report.md` should trace back to a JSON file, not
+  a re-derived computation that could drift.
+- **Surface upstream bugs**: the card flags "all-zero on real
+  candidates" and "extreme magnitude (1e38)" automatically. Two real
+  preprocessor bugs (`dxyErr` not loaded; `clPuId`/`clEmId` contain
+  upstream float32-limit garbage) were caught by the first card on
+  the 20k tag — both pre-existed silently for months.
+
+What the card is NOT:
+
+- A replacement for the H5 attrs (`feature_layout`, `samples_used`,
+  `sample_event_counts` etc.) — those travel inside the H5 and stay.
+- A model card (different artifact, lives alongside model checkpoints).
+- A "datasheet for datasets" in Gebru et al. format — that's a more
+  formal, prose-heavy document. The card is the machine-readable
+  bottom-up version of it.
+
 ## Evaluation metrics for architecture / recipe sweeps (STANDING ORDER)
 
 MAE / MSE / IQR on (px, py) are useful proxies during development — but they

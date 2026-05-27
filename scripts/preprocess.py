@@ -37,6 +37,7 @@ from l1deepmet.data.preprocessing import (
     save_h5_files,
     coerce_encoding
 )
+from l1deepmet.data.dataset_card import build_dataset_card
 from l1deepmet.plotting import control_plots
 
 
@@ -218,6 +219,72 @@ def main():
         logger.info("Saving H5 files...")
         save_h5_files(X_train, X_val, X_test, Y_train, Y_val, Y_test, output_dir, samples,
                       feature_layout=None)
+        EX_train = EX_val = EX_test = None
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Dataset card (CLAUDE.md STANDING ORDER: every preprocessed dataset
+    # under outputs/preprocessed/<tag>/ must have a dataset_card.{json,md}
+    # next to its H5 files).
+    # ──────────────────────────────────────────────────────────────────────
+    logger.info("Building dataset card...")
+    try:
+        # Per-sample loaded counts come from select_events output (events
+        # actually loaded, BEFORE the train/val/test shuffle) — that's the
+        # honest "what came in" number, distinct from the per-sample
+        # `samples` config which is the *requested* cap.
+        per_sample_loaded = {
+            name: int(payload[0].shape[0])
+            for name, payload in selected_results.items()
+        }
+        # Provenance: capture what's safely serialisable. Git SHA via
+        # subprocess so we don't depend on gitpython.
+        import subprocess as _sp
+        try:
+            _git_sha = _sp.run(
+                ["git", "-C", str(Path(__file__).resolve().parent.parent),
+                 "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=True, timeout=5,
+            ).stdout.strip()
+        except Exception:
+            _git_sha = "unknown"
+        provenance = {
+            "git_sha": _git_sha,
+            "preprocess_args": {
+                k: str(v) for k, v in vars(args).items() if v is not None
+            },
+            "source_data_root": str(data_root),
+            "config_path": str(config_path),
+            "feature_layout_path": "params.yaml::preprocess.feature_layout_extended"
+                                   if args.feature_layout == "extended"
+                                   else "params.yaml::preprocess.var_list",
+            "split_seed": 42,  # combine_shuffle_split_extended hardcodes this
+        }
+        splits_for_card = {
+            "train": {"X": X_train, "EX": EX_train, "Y": Y_train},
+            "val":   {"X": X_val,   "EX": EX_val,   "Y": Y_val},
+            "test":  {"X": X_test,  "EX": EX_test,  "Y": Y_test},
+        }
+        card_feature_layout = (
+            preprocess_cfg.get("feature_layout_extended")
+            if args.feature_layout == "extended"
+            else ["pt","eta","phi","puppi_weight","hcal_depth","px","py",
+                  "encoded_pdgId","encoded_charge"]  # legacy layout hardcoded
+        )
+        build_dataset_card(
+            output_dir=output_dir,
+            tag=args.tag,
+            splits=splits_for_card,
+            feature_layout=card_feature_layout,
+            event_feature_layout=(event_feature_layout
+                                  if args.feature_layout == "extended" else None),
+            per_sample_loaded=per_sample_loaded,
+            per_sample_requested=samples,
+            provenance=provenance,
+        )
+        logger.info(f"Dataset card written to {output_dir}/dataset_card.{{json,md}}")
+    except Exception as e:
+        # Card build must not break the actual preprocess — H5 already on disk.
+        logger.warning(f"Dataset card build failed (continuing): {e!r}")
     
     # Generate control plots
     logger.info("Generating control plots...")
