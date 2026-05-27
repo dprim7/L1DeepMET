@@ -1,8 +1,8 @@
 diff --git a/NtupleProducer/python/runPerformanceNTuple.py b/NtupleProducer/python/runPerformanceNTuple.py
-index 0168b78..72defa8 100644
+index 0168b78..de8e391 100644
 --- a/NtupleProducer/python/runPerformanceNTuple.py
 +++ b/NtupleProducer/python/runPerformanceNTuple.py
-@@ -748,14 +748,40 @@ if False:
+@@ -748,14 +748,44 @@ if False:
          getattr(process, 'l1tLayer1'+R).pfAlgoParameters.debug = True
  
  def saveCands():
@@ -20,6 +20,10 @@ index 0168b78..72defa8 100644
                                                 pdgId = cms.string("pdgId"),
 -                                               charge = cms.string("charge")
 +                                               charge = cms.string("charge"),
++                                               # NEW — impact parameter (charged cands only; 0 on neutrals).
++                                               # Replaces legacy `dxyErr` which was uniformly zero — no
++                                               # dxyError() accessor exists on l1t::PFCandidate.
++                                               dxy = cms.string("dxy"),
 +                                               # NEW — vertex association (THE most discriminating PUPPI input)
 +                                               z0 = cms.string("vz"),
 +                                               # NEW — FPGA-quantised values (what the L1 actually sees)
@@ -44,7 +48,7 @@ index 0168b78..72defa8 100644
                                             ),
                                         )
      monitorPerf("L1PF", "l1tLayer1:PF", saveCands=True)
-@@ -774,3 +800,66 @@ def saveGenCands():
+@@ -774,3 +804,66 @@ def saveGenCands():
                                             ),
                                        )
      process.p += process.gencandTable
