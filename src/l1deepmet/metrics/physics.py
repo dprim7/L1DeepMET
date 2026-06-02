@@ -284,7 +284,12 @@ def compute_rate_vs_threshold(
         thresholds_gev = np.arange(0.0, 501.0, 1.0)
     thresholds_gev = np.asarray(thresholds_gev, dtype=float)
     reco = np.asarray(reco_pt_minbias, dtype=float)
-    pass_fraction = np.array([float(np.mean(reco > t)) for t in thresholds_gev])
+    if reco.size == 0:
+        raise ValueError("reco_pt_minbias must be non-empty")
+
+    reco_sorted = np.sort(reco)
+    idx = np.searchsorted(reco_sorted, thresholds_gev, side="right")
+    pass_fraction = (reco_sorted.size - idx) / reco_sorted.size
     return {
         "thresholds": thresholds_gev,
         "pass_fraction": pass_fraction,
