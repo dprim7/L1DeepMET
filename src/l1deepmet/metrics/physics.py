@@ -324,15 +324,18 @@ def compute_working_point(
     achieved_rate_khz, plateau_efficiency, n_signal_plateau}``.
     """
     reco_mb = np.asarray(reco_pt_minbias, dtype=float)
+    if reco_mb.size == 0:
+        raise ValueError("reco_pt_minbias must be non-empty")
+
     p = float(target_rate_khz) / norm_khz
     if p <= 0.0:
-        thr = float("inf")
+        thr = float(np.nextafter(np.max(reco_mb), np.inf))
     elif p >= 1.0:
         thr = 0.0
     else:
         thr = float(np.quantile(reco_mb, 1.0 - p))
-    achieved = norm_khz * float(np.mean(reco_mb > thr)) if np.isfinite(thr) else 0.0
 
+    achieved = norm_khz * float(np.mean(reco_mb > thr))
     reco_sig = np.asarray(reco_pt_signal, dtype=float)
     gen_sig = np.asarray(gen_pt_signal, dtype=float)
     plateau_mask = gen_sig > plateau_gen_min
