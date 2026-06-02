@@ -23,19 +23,11 @@ from l1deepmet.metrics.physics import (
     compute_per_eta_card,
     compute_per_pu_card,
     compute_puppi_ablation,
-    compute_rate_vs_threshold,
-    compute_working_point,
 )
 
-
-@pytest.mark.skip(reason="design pending — see reports/physics_card_design/DESIGN.md")
-def test_compute_rate_vs_threshold():
-    pass
-
-
-@pytest.mark.skip(reason="design pending — needs target_rate_khz fixed")
-def test_compute_working_point():
-    pass
+# NOTE: compute_rate_vs_threshold + compute_working_point are now IMPLEMENTED
+# (FastPUPPI-ported, jetHtSuite.py); their real tests live in
+# tests/unit/metrics/test_trigger_metrics.py.
 
 
 @pytest.mark.skip(reason="design pending — fixed vs scaled Δ undecided")
@@ -67,8 +59,6 @@ def test_stubs_raise_not_implemented():
     """
     import numpy as np
     for fn, args in [
-        (compute_rate_vs_threshold, (np.zeros(5),)),
-        (compute_working_point,     ({}, {}, 4.0)),
         (compute_asymmetric_tails,  (np.zeros((5, 2)), np.zeros((5, 2)))),
         (compute_per_pu_card,       (np.zeros((5, 2)), np.zeros((5, 2)), np.zeros(5))),
         (compute_per_eta_card,      (np.zeros((5, 2)), np.zeros((5, 2)), np.zeros(5))),

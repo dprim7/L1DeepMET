@@ -256,64 +256,91 @@ def full_physics_card(
 # is `pytest.skip`-marked until each design is fixed.
 
 
+# Rate normalization, ported from FastPUPPI
+# NtupleProducer/python/scripts/jetHtSuite.py (``norm = 2760.0*11246/1000``):
+# 2760 colliding bunches at the HL-LHC × 11246 Hz LHC orbit frequency / 1000.
+# rate[kHz] = NORM_KHZ × (fraction of minbias events above the L1 threshold).
+NORM_KHZ: float = 2760.0 * 11246.0 / 1000.0  # ≈ 31039.0 kHz total minbias collision rate
+
+
 def compute_rate_vs_threshold(
     reco_pt_minbias: np.ndarray,
     thresholds_gev: np.ndarray | None = None,
-    bunch_crossing_rate_khz: float | None = None,
+    norm_khz: float = NORM_KHZ,
 ) -> Dict[str, np.ndarray]:
-    """Trigger rate vs L1 MET threshold on MinBias_PU200.
+    """L1 MET trigger rate vs threshold on a minbias sample (FastPUPPI def).
 
-    Returns ``{"thresholds": ..., "pass_fraction": ..., "rate_khz": ...}``.
+    ``rate(thr) = norm_khz × P(reco_MET > thr)`` — the cumulative-from-above of
+    the reco-MET distribution scaled to kHz by the colliding-bunch rate. Mirrors
+    ``jetHtSuite.makeCumulativeHTEff`` / ``makeInclusiveEffRate``.
 
-    Currently the math lives inline in ``plotting.py::plot_trigger_rates``;
-    pulling it out to a pure compute function lets ``compute_working_point``
-    call it without going through matplotlib.
+    NOTE: for a faithful L1 rate, ``reco_pt_minbias`` must be the **MinBias_PU200**
+    (zero-bias) events. In a mixed test set with no per-event sample label, the
+    standard proxy is low-gen-MET events; the caller selects the population.
 
-    OPEN DESIGN QUESTIONS:
-      - ``bunch_crossing_rate_khz``: the conversion from "events passing
-        threshold" to "rate in kHz" depends on (a) HL-LHC bunch crossing
-        rate (~40 MHz nominal), (b) Phase2Spring24 sample pre-scale (if
-        any), (c) the fraction of bunch crossings represented in the
-        MinBias sample. Need a fixed number, OR we keep it required and
-        let the caller compute it.
-      - default ``thresholds_gev``: ``np.arange(0, 501, 1)`` matches
-        common L1 rate-curve conventions but ``compute_roc_curve`` uses
-        steps of 1 GeV already; pick one.
+    Returns ``{"thresholds", "pass_fraction", "rate_khz"}`` (length-N arrays).
     """
-    raise NotImplementedError(
-        "stub — compute math is in plotting.py::plot_trigger_rates; "
-        "extract + decide rate-conversion factor"
-    )
+    if thresholds_gev is None:
+        thresholds_gev = np.arange(0.0, 501.0, 1.0)
+    thresholds_gev = np.asarray(thresholds_gev, dtype=float)
+    reco = np.asarray(reco_pt_minbias, dtype=float)
+    pass_fraction = np.array([float(np.mean(reco > t)) for t in thresholds_gev])
+    return {
+        "thresholds": thresholds_gev,
+        "pass_fraction": pass_fraction,
+        "rate_khz": norm_khz * pass_fraction,
+    }
 
 
 def compute_working_point(
-    rate_curve: Dict[str, np.ndarray],
-    turn_on_signal: Dict[str, np.ndarray],
+    reco_pt_minbias: np.ndarray,
+    reco_pt_signal: np.ndarray,
+    gen_pt_signal: np.ndarray,
     target_rate_khz: float,
+    plateau_gen_min: float = 200.0,
+    norm_khz: float = NORM_KHZ,
 ) -> Dict[str, float]:
-    """The Tier-1 decision quantity: signal efficiency at the threshold
-    that yields ``target_rate_khz`` on MinBias.
+    """Tier-1 decision quantity: signal efficiency at the fixed-rate working point.
 
-    Workflow:
-      1. From ``rate_curve``, interpolate to find threshold T s.t.
-         ``rate_curve(T) == target_rate_khz``.
-      2. From ``turn_on_signal`` (efficiency vs gen MET at multiple
-         thresholds, or per-event predictions), report:
-           - threshold_gev = T
-           - efficiency_at_T = mean signal efficiency
-           - efficiency_at_T_per_gen_bin = efficiency in each gen-MET bin
+    The threshold that yields ``target_rate_khz`` on minbias inverts the rate
+    relation analytically (mirrors ``jetHtSuite.effForRate``):
 
-    OPEN DESIGN QUESTIONS:
-      - ``target_rate_khz``: what's the L1 MET slice budget? Phase-2
-        numbers usually 4-10 kHz; pick one (or accept a list and return
-        a Pareto). User decision.
-      - Multi-sample handling: caller may want
-        ``efficiency_at_T_per_signal_sample`` (VBF / TT / SMS) — take a
-        dict of turn-on curves keyed by sample?
-      - Interpolation: log-linear in rate (rate curve is steep) or
-        straight linear?
+        rate(thr) = norm_khz × P(reco_mb > thr) = target_rate_khz
+        ⟹ thr = quantile(reco_mb, 1 − target_rate_khz / norm_khz)
+
+    The deliverable is the **plateau signal efficiency** — the fraction of signal
+    events with gen MET > ``plateau_gen_min`` that pass that threshold, i.e. the
+    efficiency the trigger achieves at a fixed background rate. Unlike AUC, this is
+    NOT invariant to a non-uniform under-prediction: a model whose response varies
+    across MET pays here even if its AUC looks fine. That is precisely why this is
+    the metric that adjudicates whether the uniform ~0.6 response actually costs us.
+
+    Returns JSON-safe scalars: ``{threshold_gev, target_rate_khz,
+    achieved_rate_khz, plateau_efficiency, n_signal_plateau}``.
     """
-    raise NotImplementedError("stub — pick target_rate_khz + interpolation scheme")
+    reco_mb = np.asarray(reco_pt_minbias, dtype=float)
+    p = float(target_rate_khz) / norm_khz
+    if p <= 0.0:
+        thr = float("inf")
+    elif p >= 1.0:
+        thr = 0.0
+    else:
+        thr = float(np.quantile(reco_mb, 1.0 - p))
+    achieved = norm_khz * float(np.mean(reco_mb > thr)) if np.isfinite(thr) else 0.0
+
+    reco_sig = np.asarray(reco_pt_signal, dtype=float)
+    gen_sig = np.asarray(gen_pt_signal, dtype=float)
+    plateau_mask = gen_sig > plateau_gen_min
+    n_plateau = int(plateau_mask.sum())
+    eff = float(np.mean(reco_sig[plateau_mask] > thr)) if n_plateau > 0 else float("nan")
+
+    return {
+        "threshold_gev": thr,
+        "target_rate_khz": float(target_rate_khz),
+        "achieved_rate_khz": achieved,
+        "plateau_efficiency": eff,
+        "n_signal_plateau": n_plateau,
+    }
 
 
 def compute_asymmetric_tails(
