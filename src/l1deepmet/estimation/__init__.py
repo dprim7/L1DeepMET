@@ -15,9 +15,21 @@ is absent or incompatible — heavy/optional imports live inside the
 functions that need them.
 """
 from l1deepmet.estimation.analytic import AnalyticReport, LayerCost, analyze_model
+from l1deepmet.estimation.ebops import (
+    EbopsReport,
+    EbopsRow,
+    collect_ebops,
+    recompute_ebops,
+    synthetic_calibration_batch,
+)
 
 __all__ = [
     "AnalyticReport",
     "LayerCost",
     "analyze_model",
+    "EbopsReport",
+    "EbopsRow",
+    "collect_ebops",
+    "recompute_ebops",
+    "synthetic_calibration_batch",
 ]
