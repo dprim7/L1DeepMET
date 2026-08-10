@@ -22,6 +22,13 @@ from l1deepmet.estimation.ebops import (
     recompute_ebops,
     synthetic_calibration_batch,
 )
+from l1deepmet.estimation.tracing import (
+    TraceReport,
+    TracingUnavailableError,
+    check_traceable,
+    register_extra_handlers,
+    trace_costs,
+)
 
 __all__ = [
     "AnalyticReport",
@@ -32,4 +39,9 @@ __all__ = [
     "collect_ebops",
     "recompute_ebops",
     "synthetic_calibration_batch",
+    "TraceReport",
+    "TracingUnavailableError",
+    "check_traceable",
+    "register_extra_handlers",
+    "trace_costs",
 ]
