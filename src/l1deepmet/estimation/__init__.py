@@ -22,6 +22,12 @@ from l1deepmet.estimation.ebops import (
     recompute_ebops,
     synthetic_calibration_batch,
 )
+from l1deepmet.estimation.report import (
+    ResourceEstimate,
+    estimate_resources,
+    format_report,
+    write_report,
+)
 from l1deepmet.estimation.tracing import (
     TraceReport,
     TracingUnavailableError,
@@ -44,4 +50,8 @@ __all__ = [
     "check_traceable",
     "register_extra_handlers",
     "trace_costs",
+    "ResourceEstimate",
+    "estimate_resources",
+    "format_report",
+    "write_report",
 ]
