@@ -26,7 +26,7 @@ pytest.importorskip("hgq")
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from train_hgq2 import build_loss, build_optimizer  # noqa: E402
+from train_hgq2 import build_callbacks, build_loss, build_optimizer  # noqa: E402
 
 
 class TestBuildLoss:
@@ -61,3 +61,40 @@ class TestBuildOptimizer:
         opt = build_optimizer(learning_rate=5e-4)
         # AdamW stores learning rate as a tracked variable.
         assert float(opt.learning_rate) == pytest.approx(5e-4)
+
+
+class TestBuildCallbacks:
+    def test_free_ebops_ordered_before_csvlogger(self, tmp_path):
+        """Both hook on_epoch_end and Keras calls callbacks in list
+        order — FreeEBOPs must write logs['ebops'] before CSVLogger
+        persists the row, or the column silently never appears."""
+        import tensorflow as tf
+        from hgq.utils.sugar import FreeEBOPs
+
+        callbacks = build_callbacks(tmp_path, patience=10)
+        ebops_idx = [i for i, c in enumerate(callbacks)
+                     if isinstance(c, FreeEBOPs)]
+        csv_idx = [i for i, c in enumerate(callbacks)
+                   if isinstance(c, tf.keras.callbacks.CSVLogger)]
+        assert len(ebops_idx) == 1
+        assert len(csv_idx) == 1
+        assert ebops_idx[0] < csv_idx[0]
+
+    def test_ebops_log_false_removes_callback(self, tmp_path):
+        from hgq.utils.sugar import FreeEBOPs
+
+        callbacks = build_callbacks(tmp_path, patience=10, ebops_log=False)
+        assert not any(isinstance(c, FreeEBOPs) for c in callbacks)
+
+    def test_standard_callbacks_present(self, tmp_path):
+        import tensorflow as tf
+
+        callbacks = build_callbacks(tmp_path, patience=7)
+        by_type = {type(c).__name__: c for c in callbacks}
+        assert "EarlyStopping" in by_type
+        assert by_type["EarlyStopping"].patience == 7
+        assert "ReduceLROnPlateau" in by_type
+        assert "TerminateOnNaN" in by_type
+        csv = by_type["CSVLogger"]
+        assert Path(csv.filename).parent == tmp_path
+        assert isinstance(csv, tf.keras.callbacks.CSVLogger)
