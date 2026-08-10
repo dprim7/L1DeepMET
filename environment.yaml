@@ -19,6 +19,6 @@ dependencies:
   - pandas
   - pip:
       - qkeras
-      - HGQ2
+      - HGQ2>=0.1.9,<0.2  # da4ml 0.5.2's hgq2 converter imports classes absent before 0.1.9
       - da4ml>=0.5.2,<0.6 # required by hls4ml>=1.3 to avoid v2-handler fallback warnings
       - dvc[s3]

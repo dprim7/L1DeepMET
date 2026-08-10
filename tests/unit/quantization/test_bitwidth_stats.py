@@ -80,11 +80,13 @@ def test_sparsity_in_zero_to_hundred(saved_hgq2_model):
     assert 0.0 <= stats["sparsity_pct"] <= 100.0
 
 
-def test_untrained_model_has_default_4_bit_kernel(saved_hgq2_model):
-    """Right after build, HGQ2's KIFConfig defaults give 4-bit kernel
-    quantizers. Documents the prior we'd see if the model never trained."""
+def test_untrained_model_has_default_8_bit_kernel(saved_hgq2_model):
+    """Right after build, HGQ2's KIFConfig defaults give 8-bit kernel
+    quantizers (kif_weight_default: i0=2, f0=6 since hgq2 0.1.9; the 0.1.0
+    default was 4 bits). Documents the prior we'd see if the model never
+    trained."""
     stats = extract_bitwidth_stats(saved_hgq2_model)
-    assert stats["avg_kernel_bitwidth"] == pytest.approx(4.0, rel=0.01)
+    assert stats["avg_kernel_bitwidth"] == pytest.approx(8.0, rel=0.01)
 
 
 def test_falls_back_gracefully_on_unloadable_path(tmp_path):
