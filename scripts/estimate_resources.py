@@ -38,6 +38,11 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("TF_NUM_INTEROP_THREADS", "2")
 os.environ.setdefault("TF_NUM_INTRAOP_THREADS", "4")
+# Shared-node politeness: numpy/OpenBLAS otherwise spawns nproc threads,
+# which trips per-user pthread limits on busy hosts (same rationale as
+# the TF caps in arch_search.py).
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "4")
+os.environ.setdefault("OMP_NUM_THREADS", "4")
 
 log = logging.getLogger("estimate_resources")
 
