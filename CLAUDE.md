@@ -60,6 +60,11 @@ python scripts/preprocess.py --config params.yaml --tag <tag> --data-root <path>
 # Train (normfac=100 is required to normalize gen MET targets and avoid NaN)
 python scripts/train.py --data-dir preprocessed/25Jul8_140X_v0 --output-dir outputs/models/run_0 \
   --epochs 100 --batch-size 256 --lr 1e-3 --normfac 100 --mode 1
+
+# Estimate FPGA resources of a saved model without synthesis
+# (analytic MACs for any model; EBOPs + da4ml LUT-cost/latency for HGQ2 models —
+#  see src/l1deepmet/estimation/README.md)
+python scripts/estimate_resources.py --model <path>/best_model.keras --output-dir outputs/estimation/<name>
 ```
 
 ## Architecture

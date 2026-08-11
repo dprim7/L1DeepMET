@@ -97,6 +97,35 @@ def build_optimizer(
     return tf.keras.optimizers.AdamW(learning_rate=learning_rate, clipnorm=clipnorm)
 
 
+def build_callbacks(output_dir: Path, *, patience: int,
+                    ebops_log: bool = True) -> list:
+    """Training callbacks, EBOPs logging included by default.
+
+    FreeEBOPs sums the per-layer EBOPs at every epoch end and writes
+    ``logs['ebops']``. It must sit *before* CSVLogger: both hook
+    ``on_epoch_end`` and Keras calls callbacks in list order, so the
+    other way around the ``ebops`` column would silently never reach
+    ``history.csv``.
+    """
+    callbacks = [
+        tf.keras.callbacks.EarlyStopping(
+            monitor="val_loss", patience=patience,
+            restore_best_weights=True, verbose=0,
+        ),
+        tf.keras.callbacks.ReduceLROnPlateau(
+            monitor="val_loss", factor=0.5, patience=5, min_lr=1e-6, verbose=0,
+        ),
+        tf.keras.callbacks.TerminateOnNaN(),
+    ]
+    if ebops_log:
+        from hgq.utils.sugar import FreeEBOPs
+        callbacks.append(FreeEBOPs())
+    callbacks.append(
+        tf.keras.callbacks.CSVLogger(str(Path(output_dir) / "history.csv"))
+    )
+    return callbacks
+
+
 # ─── Evaluation ──────────────────────────────────────────────────────────────
 
 def evaluate_model(model: tf.keras.Model, X: np.ndarray, Y: np.ndarray,
@@ -140,6 +169,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--xy-balance-weight", type=float, default=0.0)
     p.add_argument("--binned-weight", type=float, default=0.0)
 
+    p.add_argument("--ebops-log", action=argparse.BooleanOptionalAction,
+                   default=True,
+                   help="Log total EBOPs per epoch into history.csv and "
+                        "report the final per-layer EBOPs in result.json.")
     p.add_argument("--verbose", "-v", action="store_true")
     return p.parse_args()
 
@@ -194,17 +227,8 @@ def main() -> int:
     ]
     model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
 
-    callbacks = [
-        tf.keras.callbacks.EarlyStopping(
-            monitor="val_loss", patience=args.patience,
-            restore_best_weights=True, verbose=0,
-        ),
-        tf.keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss", factor=0.5, patience=5, min_lr=1e-6, verbose=0,
-        ),
-        tf.keras.callbacks.TerminateOnNaN(),
-        tf.keras.callbacks.CSVLogger(str(args.output_dir / "history.csv")),
-    ]
+    callbacks = build_callbacks(args.output_dir, patience=args.patience,
+                                ebops_log=args.ebops_log)
 
     log.info("Training for up to %d epochs", args.epochs)
     t0 = time.time()
@@ -257,6 +281,11 @@ def main() -> int:
         },
         "test_physics_card": card,
     }
+    if args.ebops_log:
+        from l1deepmet.estimation import collect_ebops
+        # EarlyStopping restored the best weights, and _ebops is a weight,
+        # so this is the EBOPs state consistent with best_model.keras.
+        result["ebops"] = collect_ebops(model).to_dict()
     with open(args.output_dir / "result.json", "w") as f:
         json.dump(result, f, indent=2, default=str)
 
