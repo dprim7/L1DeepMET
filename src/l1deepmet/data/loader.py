@@ -8,23 +8,50 @@ import tensorflow as tf # type: ignore
 logger = logging.getLogger(__name__)
 
 
-def split_preprocessed_features(X: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Split preprocessed H5 features into model input format.
-    
+def split_preprocessed_features(
+    X: np.ndarray,
+    continuous_slots: Optional[list] = None,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Split preprocessed H5 features into model input format.
+
+    Two layouts are supported, chosen by ``continuous_slots``:
+
+    - **Legacy** (``continuous_slots is None``): the 9-feature layout
+      produced by ``load_samples_to_numpy`` / ``preprocess_data``.
+      Continuous = slots 0-4 (pt, eta, phi, puppi_weight, hcal_depth);
+      momentum = slots 5-6 (px, py); categoricals = slots 7, 8
+      (encoded_pdgId, encoded_charge).
+
+    - **Extended** (``continuous_slots`` given): the 26-feature layout
+      produced by ``load_samples_to_numpy_extended``. The caller passes
+      an explicit ordered list of slot indices to use as continuous
+      inputs (e.g. ``[0, 1, 2, 3, 8, 9, ...]``). Momentum is taken from
+      slots 4-5 (px, py) and categoricals from slots 6, 7 by convention,
+      reflecting the params.yaml ``feature_layout_extended`` ordering.
+
     Args:
         X: preprocessed features array (n_events, max_pf, n_features)
-        
+        continuous_slots: optional list of column indices for the
+            continuous input. When None, the legacy slicing applies.
+
     Returns:
-        inputs: (n_events, max_pf, 5) - continuous features [pt, eta, phi, puppi, hcal_depth]
-        pxpy: (n_events, max_pf, 2) - momentum components [px, py]
-        inputs_cat0: (n_events, max_pf) - encoded pdgId
-        inputs_cat1: (n_events, max_pf) - encoded charge
+        inputs:      (n_events, max_pf, len(continuous_slots) or 5)
+        pxpy:        (n_events, max_pf, 2)
+        inputs_cat0: (n_events, max_pf) — encoded pdgId
+        inputs_cat1: (n_events, max_pf) — encoded charge
     """
-    inputs = X[:, :, 0:5]      # pt, eta, phi, puppi, hcal_depth
-    pxpy = X[:, :, 5:7]        # px, py
-    inputs_cat0 = X[:, :, 7]   # encoded_pdgId
-    inputs_cat1 = X[:, :, 8]   # encoded_charge
+    if continuous_slots is None:
+        inputs = X[:, :, 0:5]      # pt, eta, phi, puppi, hcal_depth
+        pxpy = X[:, :, 5:7]        # px, py
+        inputs_cat0 = X[:, :, 7]   # encoded_pdgId
+        inputs_cat1 = X[:, :, 8]   # encoded_charge
+    else:
+        # Extended layout — explicit continuous slot list; momentum and
+        # categoricals at the fixed extended positions.
+        inputs = X[:, :, list(continuous_slots)]
+        pxpy = X[:, :, 4:6]
+        inputs_cat0 = X[:, :, 6]
+        inputs_cat1 = X[:, :, 7]
     return inputs, pxpy, inputs_cat0, inputs_cat1
 
 
@@ -77,24 +104,32 @@ class H5DataLoader:
         logger.info(f"Loaded {split}: features {features.shape}, targets {targets.shape}")
         return features, targets
     
-    def load_split_data(self, split: str = "train") -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Load and split features into model input format.
-        
+    def load_split_data(
+        self,
+        split: str = "train",
+        continuous_slots: Optional[list] = None,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Load and split features into model input format.
+
         Args:
             split: One of 'train', 'val', 'test'
-            
+            continuous_slots: optional explicit slot list for the
+                extended layout — see ``split_preprocessed_features``.
+
         Returns:
-            inputs: (n_events, max_pf, 5) continuous features
+            inputs: (n_events, max_pf, K) continuous features
+                    (K=5 for legacy, K=len(continuous_slots) for extended)
             pxpy: (n_events, max_pf, 2) momentum components
             inputs_cat0: (n_events, max_pf) encoded pdgId
             inputs_cat1: (n_events, max_pf) encoded charge
             targets: (n_events, 2) target px, py values
         """
         features, targets = self.load_data(split)
-        inputs, pxpy, inputs_cat0, inputs_cat1 = split_preprocessed_features(features)
+        inputs, pxpy, inputs_cat0, inputs_cat1 = split_preprocessed_features(
+            features, continuous_slots=continuous_slots
+        )
         return inputs, pxpy, inputs_cat0, inputs_cat1, targets
-    
+
     def create_tf_dataset(
         self,
         split: str = "train",
@@ -102,6 +137,7 @@ class H5DataLoader:
         shuffle: bool = True,
         split_features: bool = True,
         normfac: float = 1.0,
+        continuous_slots: Optional[list] = None,
     ) -> tf.data.Dataset:
         """
         Args:
@@ -116,7 +152,9 @@ class H5DataLoader:
             tf.data.Dataset ready for training
         """
         if split_features:
-            inputs, pxpy, inputs_cat0, inputs_cat1, targets = self.load_split_data(split)
+            inputs, pxpy, inputs_cat0, inputs_cat1, targets = self.load_split_data(
+                split, continuous_slots=continuous_slots
+            )
 
             if normfac != 1.0:
                 targets = targets / normfac
