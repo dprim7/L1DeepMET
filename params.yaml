@@ -9,12 +9,27 @@ preprocess:
   output_dir: "data/preprocessed"
   plot_dir: "outputs/preprocessing_plots"
 
-  # Sample configuration with desired event counts
+  # Sample configuration with desired event counts.
+  # Tuned for the new Phase2Spring23 extended production (5 samples). For
+  # legacy 25Jul8 preprocessing (which only has TT + VBFHToInvisible locally),
+  # uncomment the legacy block below and comment out the extended one — or
+  # pass --data-root pointing at a dir with only the samples you list here.
   samples:
-    TT_PU200: 100000
-    VBFHToInvisible_PU200: 48000
+    TT_PU200: 200000
+    VBFHToInvisible_PU200: 80000
+    MinBias_PU200: 50000
+    WJetsToLNu_PU200: 100000
+    DYToLL_PU200: 50000
+  # samples:                # legacy 25Jul8
+  #   TT_PU200: 100000
+  #   VBFHToInvisible_PU200: 48000
   
-  # ROOT file variables to load
+  # ROOT file variables to load (LEGACY 9-feature path — still the default
+  # for `dvc repro preprocess`. Used by load_samples_to_numpy().)
+  # NB: `L1PuppiCands_dxyErr` was previously listed here but uniformly zero
+  # in the legacy ntuples themselves (no dxyError accessor exists at L1 —
+  # see reports/dxy_investigation/REPORT.md). Removed to avoid a dead load
+  # that the legacy 9-feature transform discards anyway.
   var_list:
     - nL1PuppiCands
     - L1PuppiCands_pt
@@ -23,13 +38,110 @@ preprocess:
     - L1PuppiCands_charge
     - L1PuppiCands_pdgId
     - L1PuppiCands_puppiWeight
-    - L1PuppiCands_dxyErr
     - HGCal3DCl_firstHcal1layers
     - HGCal3DCl_firstHcal3layers
     - HGCal3DCl_firstHcal5layers
     - HGCal3DCl_hoe
     - HGCal3DCl_showerlength
     - HGCal3DCl_coreshowerlength
+
+  # NEW: extended feature layout (Phase 1 of reports/ntuple_pipeline_plan/PLAN.md).
+  # Activated by `preprocess.py --feature-layout extended`. Missing branches
+  # (e.g. on the legacy 25Jul8 ntuples) are pad-filled with the column's
+  # declared absent-sentinel (see EXTENDED_DIRECT_BRANCHES), with a warning.
+  # The ordered list IS the H5 output layout; downstream code reads it from
+  # the H5 attrs.
+  feature_layout_extended:
+    # ─── kinematics (always present)
+    - pt
+    - eta
+    - phi
+    - puppi_weight
+    - px                      # derived: pt × cos(phi)
+    - py                      # derived: pt × sin(phi)
+    - encoded_pdgId           # derived: pdgId → 0-5 lookup
+    - encoded_charge          # derived: charge → 0-3 lookup
+    # ─── impact parameter (charged candidates only; 0 on neutrals by construction)
+    # CHANGED 2026-05-26: was `dxyErr` but that is UNIFORMLY ZERO in legacy
+    # 25Jul8 ntuples and *cannot* be populated — l1t::PFCandidate has no
+    # dxyError() accessor on any CMSSW branch we use (verified in
+    # CMSSW_14_2_0_pre2 headers). The `dxy` value itself IS populated by
+    # L1 PF from the track POCA. See reports/dxy_investigation/REPORT.md.
+    - dxy
+    # ─── vertex association (NEW — the single most discriminating PUPPI input)
+    - z0
+    # ─── FPGA-quantised candidate state (NEW)
+    - hwPt
+    - hwEta
+    - hwPhi
+    - hwPuppiWeight
+    - hwQual
+    # ─── track quality (NEW; charged candidates)
+    - trackChi2RPhi
+    - trackChi2RZ
+    - trackChi2Bend
+    - trackNStubs
+    - trackMvaQual
+    - caloEta
+    - caloPhi
+    # ─── cluster ID scores (NEW; neutral candidates from HGCal)
+    - clPuId
+    - clEmId
+    - clPt
+    - clEmEt
+    # ─── extended-v1 (Sep 2026): deployment-legal hardware-word fields.
+    # The four l1ct::PuppiObj word fields never produced before v1 — with
+    # pt/eta/phi/pdgId/puppiWeight these complete what a deployed model may
+    # legally see. hwDxy is dead at source today (prompt 4-param track fit:
+    # d0 not fitted) — kept for forward-compat with displaced tracking.
+    - hwZ0                    # charged; z0 × 0.05 cm LSB (exact int view of z0)
+    - hwDxy                   # charged; dead at source (≡0), see CAMPAIGN.md
+    - hwTkQuality             # charged; 3-bit nstubs/chi2/pT selection digest
+    - hwEmID                  # neutral; 6-bit EM-ID quality word
+    # ─── extended-v1: cluster position/shape/depth (privileged, emulator-only).
+    # clAbsZBary == 0 means BARREL cluster (only HGCal fills a z barycenter):
+    # a region flag, not a depth value. -1 on all = no cluster (charged).
+    - clEta                   # -999 sentinel cleaned to 0 (like caloEta)
+    - clPhi
+    - clSigmaRR
+    - clAbsZBary
+    - clHoE                   # capped at 50 by EXTENDED_CLEANING_SPEC (physical tail to ~700)
+    - clPtError
+    # ─── extended-v1: track extras (privileged).
+    # NB for downstream dz0-style features derived from z0: gate by particle
+    # type — muon candidates carry coarse muon-system z0 (mean |z0−PV| ≈ 2 cm
+    # vs 0.16 cm for other charged; reports/ntuple_extended_v1/PHYSICS_VALIDATION.md).
+    - trackPtError
+    - trackHitPattern
+
+  # NEW: event-level (per-event scalar) features. Saved as a separate
+  # `event_features` H5 dataset of shape (N_events, len(event_feature_layout)).
+  # Each entry maps to either a scalar ROOT branch or the leading element
+  # of a jagged ROOT branch. Missing branches are zero-filled with a warning.
+  event_feature_layout:
+    # ─── alternative MET algorithms (always present in legacy + new ntuples)
+    - puppi_met_pt              # L1PuppiMet_pt — the baseline the model corrects
+    - puppi_met_phi
+    - puppi_met_central_pt      # |η| < 2.4
+    - puppi_met_central_phi
+    - pf_met_pt                 # L1PFMet_pt — pre-PUPPI Particle Flow MET
+    - pf_met_phi
+    - calo_met_pt               # L1CaloMet_pt — calo-only MET
+    - calo_met_phi
+    - tk_met_pt                 # L1TKMet_pt — track-only MET
+    - tk_met_phi
+    # ─── L1 primary vertex (NEW — from patch's VertexWordFlatTableProducer)
+    - lead_vtx_z0               # L1Vtx_z0[0] — leading vertex z position
+    - lead_vtx_sumpt            # L1Vtx_sumPt[0] — leading vertex sum pt
+    - n_vtx                     # nL1Vtx — number of reconstructed vertices (≡1, see CAMPAIGN.md)
+    # ─── extended-v1 (Sep 2026): Layer-2 deregionizer MET — the
+    # post-truncation Puppi stream the GT actually sums. Produced since the
+    # 26Sep2 production via a hand-rolled monitorPerf (addCTL2Met does NOT
+    # exist on FastPUPPI 14_2_X; the old note claiming a 15_1_X-only helper
+    # was right, this is the workaround). Appended at the END so existing
+    # event_features consumers keep their indices; pad-filled on older tags.
+    - layer2_met_pt
+    - layer2_met_phi
   
   # MC truth variables
   var_list_mc:
@@ -78,3 +190,4 @@ train:
 model:
   # Add model architecture params as needed
   pass
+

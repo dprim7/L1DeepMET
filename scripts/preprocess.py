@@ -29,12 +29,17 @@ import numpy as np # type: ignore
 
 from l1deepmet.data.preprocessing import (
     load_samples_to_numpy,
-    select_events, 
+    load_samples_to_numpy_extended,
+    sanitize_extreme_values,
+    clean_extended_sentinels,
+    select_events,
     preprocess_data,
     combine_shuffle_split,
+    combine_shuffle_split_extended,
     save_h5_files,
     coerce_encoding
 )
+from l1deepmet.data.dataset_card import build_dataset_card
 from l1deepmet.plotting import control_plots
 
 
@@ -74,6 +79,12 @@ def main():
                        help="Directory for control plots")
     parser.add_argument("--seed", type=int, default=42,
                        help="Random seed for reproducibility")
+    parser.add_argument("--feature-layout", choices=["legacy", "extended"], default="legacy",
+                       help="legacy: 9-feature output via load_samples_to_numpy (default; "
+                            "matches existing 25Jul8 outputs). "
+                            "extended: variable-N-feature via load_samples_to_numpy_extended; "
+                            "layout comes from params.yaml::preprocess.feature_layout_extended. "
+                            "Missing branches in the input ntuples are zero-filled with a warning.")
     
     args = parser.parse_args()
     
@@ -130,40 +141,183 @@ def main():
     logger.info(f"Random seed set to: {args.seed}")
     
     # Load raw ROOT data
-    logger.info("Loading raw ROOT data...")
-    
-    results = load_samples_to_numpy(
-        data_root=data_root,
-        sample_names=sample_names,
-        var_list=var_list,
-        var_list_mc=var_list_mc,
-        max_pf=max_pf,
-        encoding=encoding,
-        include_mc=include_mc,
-        step_size="100 MB",
-        dtype=np.float32,
-    )
+    logger.info(f"Loading raw ROOT data (feature_layout={args.feature_layout})...")
+
+    if args.feature_layout == "extended":
+        feature_layout = preprocess_cfg.get("feature_layout_extended")
+        if not feature_layout:
+            raise SystemExit(
+                "feature_layout=extended requested but params.yaml has no "
+                "`preprocess.feature_layout_extended` list."
+            )
+        # Event-level layout is optional — if absent, the extended path still
+        # works but only per-candidate features are saved (event_features
+        # column will be (n_events, 0) and skipped in the H5).
+        event_feature_layout = preprocess_cfg.get("event_feature_layout") or []
+        results = load_samples_to_numpy_extended(
+            data_root=data_root,
+            sample_names=sample_names,
+            feature_layout=feature_layout,
+            var_list_mc=var_list_mc,
+            event_feature_layout=event_feature_layout,
+            max_pf=max_pf,
+            encoding=encoding,
+            include_mc=include_mc,
+            step_size="100 MB",
+            dtype=np.float32,
+        )
+        logger.info(f"Extended layout produced {len(feature_layout)} per-candidate features: {feature_layout}")
+        if event_feature_layout:
+            logger.info(f"Extended layout produced {len(event_feature_layout)} event-level features: {event_feature_layout}")
+        # Sanitize FLT_MAX-class sentinels (some L1 cluster MVAs return
+        # ±10^38 for invalid inputs — would silently break normalization).
+        # Threshold 1e6 is well above legitimate physics (hwPt ≤ ~3200,
+        # MET ≤ a few TeV) and well below FLT_MAX. Applies to both the
+        # per-candidate features AND event-level features.
+        logger.info("Sanitizing extreme/non-finite values (|x| > 1e6 → 0, NaN/Inf → 0)...")
+        logger.info("Cleaning extended sentinels (caloEta/Phi -999 → 0; clPuId/clEmId ±1e5–1e6 garbage → -1)...")
+        sanitized = {}
+        total_touched_cand = np.zeros(len(feature_layout), dtype=np.int64)
+        total_touched_evt  = np.zeros(len(event_feature_layout), dtype=np.int64)
+        total_cleaned_cand = np.zeros(len(feature_layout), dtype=np.int64)
+        for name, (X, EX, Y) in results.items():
+            X_clean,  s_cand = sanitize_extreme_values(X)
+            X_clean,  s_clean = clean_extended_sentinels(X_clean, feature_layout)
+            EX_clean, s_evt  = sanitize_extreme_values(EX) if EX.size else (EX, {"n_touched_per_feature": np.zeros(0, np.int64)})
+            sanitized[name] = (X_clean, EX_clean, Y)
+            total_touched_cand += s_cand["n_touched_per_feature"]
+            total_cleaned_cand += s_clean["n_touched_per_feature"]
+            if EX.size:
+                total_touched_evt += s_evt["n_touched_per_feature"]
+        # Log non-zero touch counts so the user sees what was hit
+        for i, n in enumerate(total_touched_cand):
+            if n > 0:
+                logger.warning(f"  sanitized candidate slot {i} ({feature_layout[i]}): {int(n)} cells replaced (|x|>1e6/NaN/Inf)")
+        for i, n in enumerate(total_cleaned_cand):
+            if n > 0:
+                logger.warning(f"  cleaned candidate slot {i} ({feature_layout[i]}): {int(n)} sentinel/garbage cells replaced")
+        for i, n in enumerate(total_touched_evt):
+            if n > 0:
+                logger.warning(f"  sanitized event slot {i} ({event_feature_layout[i]}): {int(n)} cells replaced")
+        results = sanitized
+    else:
+        event_feature_layout = []
+        results = load_samples_to_numpy(
+            data_root=data_root,
+            sample_names=sample_names,
+            var_list=var_list,
+            var_list_mc=var_list_mc,
+            max_pf=max_pf,
+            encoding=encoding,
+            include_mc=include_mc,
+            step_size="100 MB",
+            dtype=np.float32,
+        )
     
     # Select events per sample
     logger.info("Selecting events per sample...")
-    
+
     selected_results = select_events(results, samples)
-    
-    # Apply preprocessing
-    logger.info("Applying preprocessing...")
-    
-    processed_results = preprocess_data(selected_results)
-    
-    # Combine and split data
+
+    # Apply preprocessing (legacy 10→9-feature transform). The extended path
+    # has already produced final-layout features in load_samples_to_numpy_extended,
+    # so we skip this step.
+    if args.feature_layout == "extended":
+        logger.info("Extended layout — skipping legacy preprocess_data (already in final layout)")
+        processed_results = selected_results
+    else:
+        logger.info("Applying preprocessing...")
+        processed_results = preprocess_data(selected_results)
+
+    # Combine and split data — the extended path threads event_features alongside
+    # X/Y, the legacy path doesn't have them.
     logger.info("Combining and splitting data...")
-    
-    X_train, X_val, X_test, Y_train, Y_val, Y_test = combine_shuffle_split(processed_results, data_cfg)
-    
-    # Save H5 files
-    logger.info("Saving H5 files...")
-    
+
     output_dir = Path(args.output_root) / args.tag
-    save_h5_files(X_train, X_val, X_test, Y_train, Y_val, Y_test, output_dir, samples)
+    if args.feature_layout == "extended":
+        (X_train, X_val, X_test,
+         EX_train, EX_val, EX_test,
+         Y_train, Y_val, Y_test) = combine_shuffle_split_extended(processed_results, data_cfg)
+        logger.info("Saving H5 files (with event_features)...")
+        save_h5_files(
+            X_train, X_val, X_test, Y_train, Y_val, Y_test, output_dir, samples,
+            feature_layout=preprocess_cfg.get("feature_layout_extended"),
+            event_features_train=EX_train,
+            event_features_val=EX_val,
+            event_features_test=EX_test,
+            event_feature_layout=event_feature_layout,
+        )
+    else:
+        X_train, X_val, X_test, Y_train, Y_val, Y_test = combine_shuffle_split(processed_results, data_cfg)
+        logger.info("Saving H5 files...")
+        save_h5_files(X_train, X_val, X_test, Y_train, Y_val, Y_test, output_dir, samples,
+                      feature_layout=None)
+        EX_train = EX_val = EX_test = None
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Dataset card (CLAUDE.md STANDING ORDER: every preprocessed dataset
+    # under outputs/preprocessed/<tag>/ must have a dataset_card.{json,md}
+    # next to its H5 files).
+    # ──────────────────────────────────────────────────────────────────────
+    logger.info("Building dataset card...")
+    try:
+        # Per-sample loaded counts come from select_events output (events
+        # actually loaded, BEFORE the train/val/test shuffle) — that's the
+        # honest "what came in" number, distinct from the per-sample
+        # `samples` config which is the *requested* cap.
+        per_sample_loaded = {
+            name: int(payload[0].shape[0])
+            for name, payload in selected_results.items()
+        }
+        # Provenance: capture what's safely serialisable. Git SHA via
+        # subprocess so we don't depend on gitpython.
+        import subprocess as _sp
+        try:
+            _git_sha = _sp.run(
+                ["git", "-C", str(Path(__file__).resolve().parent.parent),
+                 "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=True, timeout=5,
+            ).stdout.strip()
+        except Exception:
+            _git_sha = "unknown"
+        provenance = {
+            "git_sha": _git_sha,
+            "preprocess_args": {
+                k: str(v) for k, v in vars(args).items() if v is not None
+            },
+            "source_data_root": str(data_root),
+            "config_path": str(config_path),
+            "feature_layout_path": "params.yaml::preprocess.feature_layout_extended"
+                                   if args.feature_layout == "extended"
+                                   else "params.yaml::preprocess.var_list",
+            "split_seed": 42,  # combine_shuffle_split_extended hardcodes this
+        }
+        splits_for_card = {
+            "train": {"X": X_train, "EX": EX_train, "Y": Y_train},
+            "val":   {"X": X_val,   "EX": EX_val,   "Y": Y_val},
+            "test":  {"X": X_test,  "EX": EX_test,  "Y": Y_test},
+        }
+        card_feature_layout = (
+            preprocess_cfg.get("feature_layout_extended")
+            if args.feature_layout == "extended"
+            else ["pt","eta","phi","puppi_weight","hcal_depth","px","py",
+                  "encoded_pdgId","encoded_charge"]  # legacy layout hardcoded
+        )
+        build_dataset_card(
+            output_dir=output_dir,
+            tag=args.tag,
+            splits=splits_for_card,
+            feature_layout=card_feature_layout,
+            event_feature_layout=(event_feature_layout
+                                  if args.feature_layout == "extended" else None),
+            per_sample_loaded=per_sample_loaded,
+            per_sample_requested=samples,
+            provenance=provenance,
+        )
+        logger.info(f"Dataset card written to {output_dir}/dataset_card.{{json,md}}")
+    except Exception as e:
+        # Card build must not break the actual preprocess — H5 already on disk.
+        logger.warning(f"Dataset card build failed (continuing): {e!r}")
     
     # Generate control plots
     logger.info("Generating control plots...")
@@ -172,7 +326,14 @@ def main():
     plot_dir.mkdir(parents=True, exist_ok=True)
     
     try:
-        control_plots(processed_results, plot_dir)
+        # control_plots unpacks (features, targets); strip event_features if
+        # the extended path produced a 3-tuple so the legacy plotting code
+        # still works unchanged.
+        control_plot_results = {
+            name: (payload[0], payload[-1])
+            for name, payload in processed_results.items()
+        }
+        control_plots(control_plot_results, plot_dir)
         logger.info(f"Control plots saved to {plot_dir}")
     except Exception as e:
         logger.warning(f"Control plots failed: {e}")
