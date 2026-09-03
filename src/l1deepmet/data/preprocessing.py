@@ -944,12 +944,18 @@ def save_h5_files(X_train: np.ndarray, X_val: np.ndarray, X_test: np.ndarray,
 
     def _write_split(path: Path, X: np.ndarray, Y: np.ndarray,
                      EX: Optional[np.ndarray], split_label: str) -> None:
+        # lzf + C-contiguous, NOT gzip-9: the extended loader builds X with
+        # order="F", and gzip-9 on a strided multi-GB array writes at
+        # ~0.5 MB/s (hours for a full campaign). lzf writes at disk speed
+        # for ~1.5x the size; matches preprocessing_legacy's convention.
         with h5py.File(path, 'w') as f:
-            f.create_dataset('features', data=X, compression='gzip', compression_opts=9)
-            f.create_dataset('targets', data=Y, compression='gzip', compression_opts=9)
+            f.create_dataset('features', data=np.ascontiguousarray(X),
+                             compression='lzf')
+            f.create_dataset('targets', data=np.ascontiguousarray(Y),
+                             compression='lzf')
             if has_event_features and EX is not None:
-                f.create_dataset('event_features', data=EX,
-                                 compression='gzip', compression_opts=9)
+                f.create_dataset('event_features', data=np.ascontiguousarray(EX),
+                                 compression='lzf')
             for key, value in metadata.items():
                 f.attrs[key] = value
         logger.info(f"{split_label} data saved to {path}")
